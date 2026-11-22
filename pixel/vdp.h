@@ -7,8 +7,27 @@
    VDP 32X (émulé) : module sans thread.
    ========================================================================= */
 
+/* ---- Hypothèse « bus32 » (make HYPO=bus32) ---------------------------------
+   Une 32X imaginaire : écran de 256 x 224 (comme la Super Nintendo), deux
+   frame buffers de 64 Ko faits chacun de deux DRAM 32K x 16 côte à côte,
+   et un chemin 32 bits des SH2 jusqu'à la DRAM. Une écriture 32 bits
+   (4 pixels) est alors UN accès au bus du VDP, au lieu de deux. Le
+   registre de décalage d'écran passe à 2 bits (0 à 3 points), puisqu'un
+   mot de 32 bits contient 4 pixels.
+   Sans HYPO_BUS32 : la vraie 32X (320 x 224, 2 x 128 Ko, bus 16 bits). */
+#ifndef HYPO_BUS32
+#define HYPO_BUS32 0
+#endif
+
+#if HYPO_BUS32
+#define VDP_SCREEN_WIDTH 256
+#define VDP_DRAM_SIZE (64 * 1024)
+#define VDP_BUS_BYTES 4 /* largeur du chemin vers la DRAM, en octets */
+#else
 #define VDP_SCREEN_WIDTH 320
 #define VDP_DRAM_SIZE (128 * 1024)
+#define VDP_BUS_BYTES 2
+#endif
 #define VDP_PALETTE_SIZE 256
 
 /* Frame Buffer Control Register */
@@ -122,7 +141,10 @@ void vdp_get_write_stats(vdp_write_stats *stats, int resetMax);
    - Écriture dans le frame buffer : 3 cycles, 5 si le FIFO (4 mots) est
      plein. Le VDP vide environ un mot toutes les 5 cycles, et les deux SH2
      partagent le bus et le FIFO : au mieux 384 000 / 5 = 76 800 écritures
-     16 bits par image, pour les deux CPU ensemble. */
+     16 bits par image, pour les deux CPU ensemble.
+   - Hypothèse bus32 : mêmes temps, mais chaque accès transporte un mot de
+     32 bits (les deux DRAM d'un frame buffer écrites dans le même cycle) :
+     76 800 accès de 4 pixels par image. */
 #define VDP_SH2_CYCLES_PER_FRAME 384000u
 #define VDP_FB_WRITE_CYCLES 3u      /* FIFO non plein */
 #define VDP_FB_WRITE_CYCLES_FULL 5u /* FIFO plein */
@@ -154,8 +176,15 @@ extern volatile uint16_t *const bitmapModeRegister;
    l'écran est l'octet x + 1 de la ligne). Le VDP le lit à chaque ligne :
    une écriture prend effet à la ligne suivante, ce qui permet de le
    changer ligne par ligne (routine H_INT). Une ligne affichée décalée lit
-   321 octets : prévoir au moins 161 mots par ligne. */
+   321 octets : prévoir au moins 161 mots par ligne.
+   Hypothèse bus32 : 2 bits, décalage de 0 à 3 points (le pixel x de
+   l'écran est l'octet x + SFT) ; une ligne décalée lit jusqu'à 259
+   octets. */
+#if HYPO_BUS32
+#define SCREEN_SHIFT_SFT 0x0003
+#else
 #define SCREEN_SHIFT_SFT 0x0001
+#endif
 extern volatile uint16_t *const screenShiftRegister;
 uint16_t vdp_read_fbcr(void);
 void vdp_write_fbcr(uint16_t value);

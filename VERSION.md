@@ -710,3 +710,89 @@ ratés pouvait devenir négatif).
 Par CPU et par image, hors écritures FB, avec l'assembleur : 248 000
 cycles en moyenne, 277 000 au pire (259 000 et 290 000 avant).
 ```
+
+---
+
+Hypothèse bus32, étape 1 : écran de 256 de large, chemin 32 bits simulé
+
+Une expérience « univers parallèle » : et si Sega avait donné à la 32X un
+chemin 32 bits des SH2 jusqu'au frame buffer ? Pour que deux frame
+buffers de 32 bits tiennent dans des DRAM de 64 Ko (deux puces 32K x 16
+par frame buffer), l'écran passe à 256 x 224, comme la Super Nintendo.
+Cette étape change la machine simulée, pas encore le moteur : il écrit
+toujours des mots de 16 bits. Elle mesure donc le gain de la résolution
+seule.
+
+**Ce que fait cette version** :
+- Interrupteur de compilation : `make HYPO=bus32 ...` (option CMake
+  `SUPERVDP_HYPO`, macro `HYPO_BUS32`). Sans lui, rien ne change : vraie
+  32X, mêmes tests, même code SH2. Chaque hypothèse a son répertoire de
+  construction (`build`, `build-bus32`) ; `run`, `stats`, `headless` et
+  `test` le suivent.
+- Simulateur `pixel/` (hypothèse bus32 seulement) :
+  - `VDP_SCREEN_WIDTH` = 256, `VDP_DRAM_SIZE` = 64 Ko par frame buffer
+    (l'image et la table de lignes occupent 58 304 octets) ;
+  - `VDP_BUS_BYTES` = 4 : une écriture 32 bits compte pour un seul accès
+    au bus du VDP (deux sur la vraie 32X). Mêmes temps : 3 cycles par
+    écriture (5 si le FIFO est plein), un accès vidé toutes les 5 cycles ;
+  - registre de décalage d'écran sur 2 bits (`SCREEN_SHIFT_SFT` = 3) :
+    le pixel x de l'écran est l'octet x + SFT. Le moteur n'utilise encore
+    que 0 et 1 ;
+  - les statistiques donnent l'écran entier en accès de la largeur du
+    bus (« en 32 bits : 14336 »), l'objectif de l'étape 2.
+- `compose_line` : le masque des colonnes de tile de la ligne est
+  calculé depuis `LINE_SPAN` (20 ou 21 colonnes pour 322 pixels, 16 ou
+  17 pour 258) au lieu d'être écrit en dur. Mêmes constantes, donc même
+  code, pour la vraie 32X.
+- Programme 68000 de la démo : les bornes de défilement suivent la
+  largeur de l'écran (xA de 0 à 512, xB de 0 à 416 en bus32).
+- `tests/run_tests.sh` : scénarios et défilements attendus propres à
+  chaque hypothèse.
+- Vérifié : vraie 32X, résultats identiques à la version précédente ;
+  bus32, `test_compose` 1 182 912 lignes sans erreur, les 5 scénarios
+  identiques à la référence.
+
+**Mesures** (simulateur, Master, modèle `cost.h` + écritures à 3..5
+cycles, en % des 384 000 cycles d'une image) :
+
+| Scénario | Vraie 32X (320, bus 16) | Bus32 étape 1 (256, mots de 16) | Image de 1/60 s |
+|----------|-------------------------|---------------------------------|-----------------|
+| départ   | 74,7 .. 84,1 %          | 60,6 .. 68,1 %                  | 0,75 -> 0,61    |
+| impair   | 80,4 .. 89,8 %          | 67,4 .. 74,9 %                  | 0,80 -> 0,67    |
+| milieu   | 85,4 .. 94,7 %          | 70,5 .. 77,9 %                  | 0,85 -> 0,70    |
+| bout     | 76,8 .. 86,2 %          | 63,5 .. 71,0 %                  | 0,77 -> 0,64    |
+| retour   | 81,1 .. 90,4 %          | 66,8 .. 74,3 %                  | 0,81 -> 0,67    |
+
+- accès au bus du VDP : 35 840 -> 28 672 par image (-20 %, autant que
+  les pixels) ;
+- modèle seul, pire image de la période : 287 410 -> 242 455 cycles
+  (-16 %) ; un peu moins que les pixels, la part fixe de chaque ligne
+  restant la même.
+
+**Ce qui reste pour plus tard** :
+- étape 2 : `compose_line` écrit des mots de 32 bits (4 pixels), avec un
+  décalage d'écran de 0 à 3 choisi ligne par ligne ; l'écran entier
+  tombe alors à 14 336 accès par image ;
+- étape 3 : le banc `tools/sh2cycles` en mode bus32 (une écriture MOV.L
+  = un accès), et `cost.h` réétalonné sur le nouveau code. D'ici là, les
+  coûts unitaires de `cost.h` sont ceux de la vraie 32X : valables pour
+  l'étape 1 (même code), approximatifs ensuite ;
+- variantes : réalignement par le SH2 plutôt que SFT sur 2 bits ; SDRAM
+  en 32 bits.
+
+Message de commit proposé :
+
+```
+Hypothèse bus32, étape 1 : écran de 256 de large, chemin 32 bits simulé
+
+make HYPO=bus32 : écran de 256 x 224, frame buffers de 64 Ko, une
+écriture 32 bits = un accès au bus du VDP, SFT sur 2 bits. Sans HYPO,
+rien ne change (vraie 32X, même code SH2). Répertoire de construction
+propre à chaque hypothèse.
+
+compose_line : masque des colonnes de la ligne calculé depuis LINE_SPAN.
+Démo et tests : défilements selon la largeur de l'écran.
+
+Le moteur écrit encore en 16 bits : gain de la résolution seule. Master,
+milieu : 70,5..77,9 % de l'image au lieu de 85,4..94,7 %.
+```

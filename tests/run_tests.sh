@@ -12,11 +12,13 @@
 # =========================================================================
 set -e
 
-BUILD=${BUILD:-build}
+# Hypothèse matérielle (voir pixel/vdp.h) : vide (vraie 32X) ou bus32
+HYPO=${HYPO:-}
+BUILD=${BUILD:-build${HYPO:+-$HYPO}}
 OUT=$BUILD/tests
 mkdir -p "$OUT"
 
-cmake -S . -B "$BUILD" >/dev/null
+cmake -S . -B "$BUILD" -DSUPERVDP_HYPO="$HYPO" >/dev/null
 cmake --build "$BUILD" --target test_compose supervdp_headless >/dev/null
 
 echo "== compose_line"
@@ -24,7 +26,8 @@ echo "== compose_line"
 
 # scenario NOM IMAGES MANETTE CAPTURE XA XB
 #   La manette (DEBUT-FIN:BOUTONS) fait avancer la vue ; la capture est
-#   prise une fois la vue arrêtée. xB = (xA x 352 + 224) / 448.
+#   prise une fois la vue arrêtée. xB = (xA x 352 + 224) / 448
+#   (bus32, écran de 256 : xB = (xA x 416 + 256) / 512).
 scenario() {
   name=$1 frames=$2 pad=$3 shot=$4 xa=$5 xb=$6
   padopt=""
@@ -43,11 +46,19 @@ scenario() {
     sed 's/^/      /'
 }
 
-echo "== simulateur complet"
-scenario depart 120 "" 100 0 0
-scenario impair 140 "10-46:R" 100 37 29
-scenario milieu 200 "10-109:R" 180 100 79
-scenario bout 300 "10-209:RC" 280 448 352
-scenario retour 300 "10-209:RC 220-229:L" 280 438 344
+echo "== simulateur complet${HYPO:+ (hypothese $HYPO)}"
+if [ "$HYPO" = bus32 ]; then
+  scenario depart 120 "" 100 0 0
+  scenario impair 140 "10-46:R" 100 37 30
+  scenario milieu 200 "10-109:R" 180 100 81
+  scenario bout 300 "10-209:RC" 280 512 416
+  scenario retour 300 "10-209:RC 220-229:L" 280 502 408
+else
+  scenario depart 120 "" 100 0 0
+  scenario impair 140 "10-46:R" 100 37 29
+  scenario milieu 200 "10-109:R" 180 100 79
+  scenario bout 300 "10-209:RC" 280 448 352
+  scenario retour 300 "10-209:RC 220-229:L" 280 438 344
+fi
 
 echo "Tous les tests sont passes."

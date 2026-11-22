@@ -136,12 +136,17 @@ void vdp_count_cpu_cycles(uint32_t cycles) {
         __atomic_fetch_add(&_currentCycles[cpu], cycles, __ATOMIC_RELAXED);
 }
 
+/* Accès au bus du VDP : une écriture plus large que le bus en fait
+   plusieurs. Vraie 32X (bus 16 bits) : une écriture 32 bits = 2 accès.
+   Hypothèse bus32 : 1 accès, quelle que soit la taille. */
+#define VDP_ACCESSES_PER_WRITE32 (4 / VDP_BUS_BYTES)
+
 uint32_t vdp_bus_accesses(const vdp_frame_writes *frame, int cpu) {
     uint32_t n = 0;
     for (int area = 0; area < VDP_AREAS; area++)
         n += frame->writes[cpu][area][VDP_WRITE_8] +
              frame->writes[cpu][area][VDP_WRITE_16] +
-             2 * frame->writes[cpu][area][VDP_WRITE_32];
+             VDP_ACCESSES_PER_WRITE32 * frame->writes[cpu][area][VDP_WRITE_32];
     return n;
 }
 
@@ -215,10 +220,10 @@ void vdp_print_write_stats(const char *label) {
     }
     fprintf(stderr,
             " | total derniere %u = %.1f %% du plafond %u (ecran entier en "
-            "16 bits : %d) | images %lu\n",
+            "%d bits : %d) | images %lu\n",
             lastTotal, 100.0 * lastTotal / VDP_FB_WRITES_PER_FRAME,
-            VDP_FB_WRITES_PER_FRAME, VDP_SCREEN_WIDTH * _screenHeight / 2,
-            ws.frames);
+            VDP_FB_WRITES_PER_FRAME, 8 * VDP_BUS_BYTES,
+            VDP_SCREEN_WIDTH * _screenHeight / VDP_BUS_BYTES, ws.frames);
 
     /* Le VDP vide le FIFO à son rythme, pour les deux CPU ensemble */
     const uint32_t drain = lastTotal * VDP_FB_DRAIN_CYCLES;
@@ -368,8 +373,8 @@ void vdp_render_line(int line, uint32_t *rgb) {
     case 1: { // PACKED_PIXEL_MODE
         /* Un pixel = un octet, lus dans l'ordre des adresses : le pixel x est
            l'octet (adresse de ligne * 2 + x), comme sur la vraie 32X. Avec
-           SFT, l'affichage est décalé d'un point : le pixel x est l'octet
-           x + 1. Le registre est lu ici, au moment où la ligne est
+           SFT, l'affichage est décalé : le pixel x est l'octet x + SFT
+           (SFT vaut 0 ou 1 ; 0 à 3 avec l'hypothèse bus32). Le registre est lu ici, au moment où la ligne est
            balayée : sa valeur est celle écrite avant cette ligne. */
         const uint8_t *pixels = (const uint8_t *)displayFrameBuffer +
                                 displayFrameBuffer[line] * 2 +

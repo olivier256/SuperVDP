@@ -16,6 +16,8 @@
    xB = xA x 352 / 448 = xA x 11 / 14, arrondi : quand A avance de
    14 pixels, B en avance de 11. La division (DIVU sur 68000) n'est faite
    qu'une fois par image.
+   Hypothèse bus32 (écran de 256 de large) : xA de 0 à 512, xB de 0 à 416,
+   xB = xA x 416 / 512, arrondi.
 
    Commandes : Gauche / Droite déplacent la vue (le décor défile dans
    l'autre sens) ; C maintenu : 4 pixels par image au lieu de 1.
@@ -25,10 +27,11 @@
 #include "interface.h"
 #include "platform.h"
 #include "shared.h"
+#include "vdp.h"
 
 #include "demo_assets.h"
 
-#define SCREEN_WIDTH 320
+#define SCREEN_WIDTH VDP_SCREEN_WIDTH
 #define SPEED_SLOW 1 /* pixels par image */
 #define SPEED_FAST 4
 

@@ -11,6 +11,18 @@ endif()
 
 find_package(Threads REQUIRED)
 
+# ---- Hypothèse matérielle ---------------------------------------------------
+# Vide : la vraie 32X. « bus32 » : écran de 256 x 224, frame buffers de
+# 64 Ko, chemin 32 bits jusqu'à la DRAM, SFT sur 2 bits (voir pixel/vdp.h).
+# Depuis le Makefile : make HYPO=bus32 ... (répertoire build-bus32).
+set(SUPERVDP_HYPO "" CACHE STRING "Hypothese materielle : vide (vraie 32X) ou bus32")
+if(SUPERVDP_HYPO STREQUAL "bus32")
+	add_compile_definitions(HYPO_BUS32=1)
+	message(STATUS "Hypothese bus32 : 256 x 224, chemin 32 bits vers la DRAM")
+elseif(NOT SUPERVDP_HYPO STREQUAL "")
+	message(FATAL_ERROR "SUPERVDP_HYPO inconnue : ${SUPERVDP_HYPO} (vide ou bus32)")
+endif()
+
 # ---- Simulateur 32X « pixel » ----------------------------------------------
 # VDP, interface (COMM, V_INT) et plates-formes : sans rapport avec SuperVDP.
 

@@ -461,7 +461,7 @@ typedef struct {
 } Run;
 
 /* Segments formés sur LINE_SPAN pixels, de la colonne scrollAX - 1 à la
-   colonne scrollAX + 320 de A : de quoi dessiner la ligne avec ou sans
+   colonne scrollAX + FB_WIDTH de A : de quoi dessiner la ligne avec ou sans
    décalage (voir compose_line). */
 #define LINE_SPAN (FB_WIDTH + 2)
 
@@ -500,9 +500,15 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
     const unsigned xs = wrapIn(scrollAX - 1, pa.width);
     const unsigned col0 = xs >> TILE_SHIFT; /* tile entamée */
     const unsigned firstSx = TILE_SIZE - (xs & (TILE_SIZE - 1));
-#if LINE_SPAN != 322 || TILE_SIZE != 16
+/* Colonnes de tile qui suivent la tile entamée : SPAN_COLS, une de plus
+   si la ligne entame sa première tile par son dernier pixel (firstSx = 1).
+   20 ou 21 pour la vraie 32X (LINE_SPAN = 322), 16 ou 17 pour
+   l'hypothèse bus32 (LINE_SPAN = 258). */
+#define SPAN_COLS ((LINE_SPAN - 2) / TILE_SIZE)
+#if (LINE_SPAN - 2) % TILE_SIZE != 0 || TILE_SIZE != 16 || SPAN_COLS + 1 > 25
 #error "nombre de colonnes de la ligne (masque de 'bits') à revoir"
 #endif
+#define COLS_MASK(n) (0xFFFFFFFFu << (32 - (n)))
     Run runs[MAX_RUNS];
     Run *run = runs;
     unsigned start = 0;
@@ -521,8 +527,8 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
     /* Bits des colonnes suivantes, col0 + 1 et au-delà, en tête de
        'bits' : 32 bits lus depuis l'octet qui contient le premier, puis
        décalés de 0 à 7 bits ; il en reste au moins 25. On garde ceux des
-       colonnes de la ligne : 21 si elle entame sa première tile par son
-       dernier pixel (firstSx = 1), 20 sinon. */
+       colonnes de la ligne : SPAN_COLS + 1 si elle entame sa première tile
+       par son dernier pixel (firstSx = 1), SPAN_COLS sinon. */
     const unsigned b = col0 + 1;
     const uint8_t *const p8 =
         planeA->classChanges + yA * planeA->changeBytes + (b >> 3);
@@ -534,7 +540,7 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
         bits <<= 2;
     if (b & 1)
         bits <<= 1;
-    bits &= firstSx == 1 ? 0xFFFFF800u : 0xFFFFF000u;
+    bits &= firstSx == 1 ? COLS_MASK(SPAN_COLS + 1) : COLS_MASK(SPAN_COLS);
 
     for (unsigned sx = firstSx; bits != 0; bits <<= 1, sx += TILE_SIZE) {
         if ((int32_t)bits >= 0)

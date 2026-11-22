@@ -6,3 +6,4 @@
 
 # Réglages VS Code locaux (les réglages partagés sont dans SuperVDP.code-workspace)
 /.vscode/
+build-*/
