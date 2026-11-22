@@ -796,3 +796,95 @@ Démo et tests : défilements selon la largeur de l'écran.
 Le moteur écrit encore en 16 bits : gain de la résolution seule. Master,
 milieu : 70,5..77,9 % de l'image au lieu de 85,4..94,7 %.
 ```
+
+---
+
+Hypothèse bus32, étape 2 : le moteur écrit des mots de 32 bits
+
+Après l'étape 1 (machine simulée), le moteur profite du chemin 32 bits :
+chaque écriture dans le frame buffer porte 4 pixels, et le décalage
+d'écran de 0 à 3 aligne la copie du plan dominant sur 4 pixels. Tout
+reste derrière `HYPO_BUS32` : sans `HYPO=bus32`, le code de la vraie 32X
+est inchangé (source prétraitée identique aux constantes près, même code
+machine).
+
+**Ce que fait cette version** (hypothèse bus32 seulement) :
+- `compose.c`, sortie en 32 bits : la ligne reste produite deux pixels
+  à la fois, de gauche à droite, chaque mot une seule fois. Un `LineOut`
+  réunit les mots par paires : un mot de gauche attend, le mot de droite
+  part avec lui en une seule écriture (`out16`). `PUT` passe par lui, les
+  fonctions de copie et de fusion n'ont pas changé. Sur l'hôte, une
+  écriture hors ordre ou un mot en attente en fin de ligne arrête le
+  programme.
+- Tiles entières en mots de 32 bits : `copyTileEven` lit 4 MOV.L (une
+  tile commence toujours à une adresse multiple de 4) et écrit 4 mots
+  (`out32`, recomposé si la ligne n'est pas alignée à cet endroit) ;
+  `copyTileOdd` écrit aussi 4 mots, `(retenue << 24) | (l0 >> 8)`...
+- Décalage d'écran de 0 à 3 choisi ligne par ligne : segments formés
+  depuis `scrollAX - 3` sur 262 pixels ; pour chaque décalage, chaque
+  plan est classé selon sa colonne de départ modulo 4 (alignée, à
+  cheval sur deux mots, impaire) ; on garde le moins cher, le plus petit
+  à égalité. Une ligne décalée fait 260 pixels (65 mots de 32 bits).
+  Sur la trajectoire de la démo, les 4 valeurs sont choisies à parts
+  égales (28 888 / 28 648 / 28 683 / 28 693 lignes).
+- `MANY_COLS` : le nombre de colonnes de tile de la ligne (17 ou 16)
+  dépend maintenant d'un seuil sur `firstSx` (< 6) ; vraie 32X : toujours
+  `firstSx == 1`.
+- Fusion toujours en C (`merge_sh2.S` écrit des mots de 16 bits).
+- `framebuffer.h` : `FB_PITCH` = largeur + `FB_LINE_EXTRA` (2, ou 4 en
+  bus32 : 260 octets, lignes alignées sur 4).
+- `test_compose` : vérifie aussi les écritures 32 bits (alignées sur 4,
+  dans la ligne, chaque mot une fois, aucune écriture 16 bits) et le
+  décalage de 0 à 3 ; affiche la répartition des décalages et le nombre
+  d'écritures par taille.
+- Vérifié : vraie 32X, mêmes résultats ; bus32, `test_compose` 1 182 912
+  lignes sans erreur (76 601 508 écritures, toutes en 32 bits, contre
+  152 028 681 en 16 bits à l'étape 1), les 5 scénarios identiques à la
+  référence.
+
+**Mesures** (simulateur, Master, modèle `cost.h` + écritures à 3..5
+cycles, en % des 384 000 cycles d'une image) :
+
+| Scénario | Vraie 32X       | Bus32 étape 1   | Bus32 étape 2   |
+|----------|-----------------|-----------------|-----------------|
+| départ   | 74,7 .. 84,1 %  | 60,6 .. 68,1 %  | 55,0 .. 58,8 %  |
+| impair   | 80,4 .. 89,8 %  | 67,4 .. 74,9 %  | 61,8 .. 65,6 %  |
+| milieu   | 85,4 .. 94,7 %  | 70,5 .. 77,9 %  | 65,0 .. 68,7 %  |
+| bout     | 76,8 .. 86,2 %  | 63,5 .. 71,0 %  | 57,9 .. 61,7 %  |
+| retour   | 81,1 .. 90,4 %  | 66,8 .. 74,3 %  | 61,3 .. 65,0 %  |
+
+- accès au bus du VDP, deux CPU : 35 840 -> 28 672 -> 14 336 par image
+  (18,7 % du plafond) ;
+- modèle seul, trajectoire de la démo : 411 857 -> 413 307 cycles par
+  image pour les deux CPU (+0,4 % : trois lignes sur quatre sont
+  décalées, donc plus larges).
+
+**Ce qui reste pour plus tard** :
+- le modèle de `cost.h` reste celui du code 16 bits : il ne voit ni les
+  MOV.L des tiles entières (8 lectures et 8 écritures devenues 4 et 4),
+  ni le coût de `out16` / `out32` (un test et des décalages par mot).
+  Le gain sur le calcul est donc inconnu dans un sens comme dans
+  l'autre. Étape 3 : `tools/sh2cycles` en mode bus32 (MOV.L dans le
+  frame buffer = un accès) et `cost.h` réétalonné sur ce code ;
+- `HALF_WORD_EXTRA` (surcoût d'un plan non aligné sur 4, pour le choix
+  du décalage) est une estimation, à mesurer avec le banc ;
+- variantes : réalignement par le SH2 plutôt que SFT sur 2 bits ; SDRAM
+  en 32 bits.
+
+Message de commit proposé :
+
+```
+Hypothèse bus32, étape 2 : le moteur écrit des mots de 32 bits
+
+compose_line (HYPO_BUS32) : un LineOut réunit les mots de la ligne par
+paires, une écriture 32 bits pour 4 pixels ; tiles entières lues en
+MOV.L et écrites en 4 mots. Décalage d'écran de 0 à 3 choisi ligne par
+ligne pour aligner le plan dominant sur 4 pixels ; ligne décalée de 260
+pixels. Vraie 32X : code inchangé.
+
+test_compose : écritures 32 bits vérifiées, répartition des décalages.
+
+Accès au bus du VDP : 14 336 par image (28 672 à l'étape 1). Master,
+milieu : 65,0..68,7 % de l'image (70,5..77,9 % à l'étape 1). cost.h
+reste à réétalonner sur ce code (étape 3).
+```

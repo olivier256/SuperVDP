@@ -13,6 +13,9 @@
    Chaque mot de la ligne (deux pixels) est écrit une seule fois, en
    16 bits, à une adresse paire. Aucun tampon de ligne : chaque pixel est
    lu une fois, dans le plan qui le montre (voir compose.c).
+   Hypothèse bus32 (voir pixel/vdp.h) : écritures de 32 bits (4 pixels) à
+   des adresses multiples de 4 ; décalage de 0 à 3, une ligne décalée
+   faisant 260 pixels (65 mots de 32 bits) au lieu de 256 (64).
 
    Décalage d'écran (SFT, voir pixel/vdp.h) : compose_line choisit pour
    chaque ligne de la dessiner avec ou sans décalage d'un point, selon ce

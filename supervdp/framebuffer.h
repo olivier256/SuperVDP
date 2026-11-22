@@ -16,8 +16,14 @@
    ne déborde pas sur la suivante. 224 lignes : 72 640 octets sur 128 Ko.
    ========================================================================= */
 
+/* Pixels ajoutés à une ligne dessinée avec décalage d'écran : un mot de
+   la largeur du bus (2 pixels ; 4 avec l'hypothèse bus32, où une ligne
+   décalée de 1 à 3 points fait 260 pixels). Hypothèse bus32 : 224 lignes
+   de 260 octets, 58 752 octets sur 64 Ko ; chaque ligne commence à une
+   adresse multiple de 4, pour les écritures 32 bits. */
+#define FB_LINE_EXTRA VDP_BUS_BYTES
 #define FB_WIDTH VDP_SCREEN_WIDTH
-#define FB_PITCH (VDP_SCREEN_WIDTH + 2)
+#define FB_PITCH (VDP_SCREEN_WIDTH + FB_LINE_EXTRA)
 #define FB_LINE_TABLE_BYTES 512
 
 /* Remplit la table de lignes du frame buffer de dessin */

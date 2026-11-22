@@ -107,7 +107,85 @@ static inline uint16_t readPair(const uint8_t *p) {
    MOV.W R0,@(disp,Rn), sans recalculer l'adresse à chaque mot.
    Sur l'hôte : un offset, et chaque écriture passe par vdp_dram_write16(),
    qui la compte. */
+#if HYPO_BUS32
+/* Hypothèse bus32 : on écrit des mots de 32 bits (4 pixels), à des
+   adresses multiples de 4. Le moteur produit toujours ses pixels deux par
+   deux, mais il écrit chaque ligne de gauche à droite, chaque mot une
+   seule fois : un « LineOut » réunit les mots par paires. Un mot de
+   gauche (pixels 4k, 4k + 1) attend dans 'hi' ; le mot de droite le
+   complète et part avec lui en une seule écriture. PUT ignore donc k : les
+   appels se font dans l'ordre de la ligne, et SKIP n'a rien à faire. */
+typedef struct {
 #if defined(__sh__)
+    volatile uint32_t *p; /* prochain mot de 32 bits de la ligne */
+#else
+    uint32_t off; /* son offset dans le frame buffer de dessin */
+#endif
+    uint32_t hi;   /* mot de gauche en attente */
+    unsigned half; /* 1 : 'hi' attend son voisin de droite */
+} LineOut;
+typedef LineOut *Dest;
+
+static inline void outWrite32(LineOut *o, uint32_t v) {
+#if defined(__sh__)
+    *o->p++ = v;
+#else
+    vdp_dram_write32(o->off, v);
+    o->off += 4;
+#endif
+}
+
+/* Deux pixels (un mot de 16 bits) */
+static inline void out16(LineOut *o, unsigned v) {
+    if (o->half) {
+        outWrite32(o, (o->hi << 16) | (v & 0xFFFFu));
+        o->half = 0;
+    } else {
+        o->hi = v & 0xFFFFu;
+        o->half = 1;
+    }
+}
+
+/* Quatre pixels d'un coup : une écriture si la ligne est alignée, sinon
+   le mot de gauche de v complète celui qui attend, et son mot de droite
+   attend à son tour. */
+static inline void out32(LineOut *o, uint32_t v) {
+    if (o->half) {
+        outWrite32(o, (o->hi << 16) | (v >> 16));
+        o->hi = v & 0xFFFFu;
+    } else {
+        outWrite32(o, v);
+    }
+}
+
+/* La destination d'une copie : toujours la suite de la ligne. Sur l'hôte,
+   on vérifie que le moteur écrit bien dans l'ordre (sinon, abandon). */
+#if defined(__sh__)
+#define lineDest(o, offset) (o)
+#define lineEnd(o, offset) ((void)0)
+#else
+#include <stdio.h>
+#include <stdlib.h>
+static inline LineOut *lineDest(LineOut *o, uint32_t offset) {
+    if (o->off + 2 * o->half != offset) {
+        fprintf(stderr, "compose_line : ecriture hors ordre (%u au lieu de %u)\n",
+                (unsigned)offset, (unsigned)(o->off + 2 * o->half));
+        abort();
+    }
+    return o;
+}
+static inline void lineEnd(LineOut *o, uint32_t offset) {
+    lineDest(o, offset);
+    if (o->half) {
+        fprintf(stderr, "compose_line : mot de 16 bits en attente en fin de ligne\n");
+        abort();
+    }
+}
+#endif
+
+#define PUT(d, k, v) out16((d), (v)) /* dans l'ordre de la ligne */
+#define SKIP(d, words) ((void)0)
+#elif defined(__sh__)
 typedef volatile uint16_t *Dest;
 #define DEST(offset) ((Dest)(VDP_DRAM_ADDRESS + (offset)))
 #define PUT(d, k, v) ((d)[k] = (v)) /* mot k après d */
@@ -181,6 +259,17 @@ typedef void (*CopySpan)(Dest d, const PlaneRow *pr, unsigned x, unsigned n,
                          ComposeCost *cost);
 
 /* Une ligne de tile entière, source paire : 8 mots, sans boucle */
+#if HYPO_BUS32
+/* Hypothèse bus32 : la source commence au début d'une tile, donc à une
+   adresse multiple de 4 : quatre MOV.L lus, quatre mots de 32 bits
+   écrits (un de plus en attente si la ligne n'est pas alignée ici). */
+static inline void copyTileEven(Dest d, const uint8_t *src) {
+    out32(d, readQuad(src));
+    out32(d, readQuad(src + 4));
+    out32(d, readQuad(src + 8));
+    out32(d, readQuad(src + 12));
+}
+#else
 static inline void copyTileEven(Dest d, const uint8_t *src) {
     PUT(d, 0, readPair(src));
     PUT(d, 1, readPair(src + 2));
@@ -191,6 +280,7 @@ static inline void copyTileEven(Dest d, const uint8_t *src) {
     PUT(d, 6, readPair(src + 12));
     PUT(d, 7, readPair(src + 14));
 }
+#endif
 
 /* Source paire : chaque morceau commence à une adresse paire et a une
    longueur paire, dans la tile comme dans le frame buffer. */
@@ -233,6 +323,14 @@ static inline uint8_t copyTileOdd(Dest d, const uint8_t *src, uint8_t carry) {
        écrit garde les 16 bits de poids faible, sans masque. */
     const uint32_t l0 = readQuad(src), l1 = readQuad(src + 4),
                    l2 = readQuad(src + 8), l3 = readQuad(src + 12);
+#if HYPO_BUS32
+    /* Quatre pixels écrits par mot : le dernier pixel du mot long
+       précédent (ou la retenue), puis les trois premiers du suivant. */
+    out32(d, ((uint32_t)carry << 24) | (l0 >> 8));
+    out32(d, (l0 << 24) | (l1 >> 8));
+    out32(d, (l1 << 24) | (l2 >> 8));
+    out32(d, (l2 << 24) | (l3 >> 8));
+#else
     PUT(d, 0, (uint16_t)((carry << 8) | (l0 >> 24)));
     PUT(d, 1, (uint16_t)(l0 >> 8));
     PUT(d, 2, (uint16_t)((l0 << 8) | (l1 >> 24)));
@@ -241,6 +339,7 @@ static inline uint8_t copyTileOdd(Dest d, const uint8_t *src, uint8_t carry) {
     PUT(d, 5, (uint16_t)(l2 >> 8));
     PUT(d, 6, (uint16_t)((l2 << 8) | (l3 >> 24)));
     PUT(d, 7, (uint16_t)(l3 >> 8));
+#endif
     return (uint8_t)l3;
 }
 
@@ -397,8 +496,9 @@ mergeSpan(Dest d, const PlaneRow *pa, unsigned xa, const PlaneRow *pb,
    par merge_sh2.S, même interface et même résultat que mergeSpan, qui
    reste la référence (et la version de l'hôte). merge_sh2.S lit row,
    rowEnd et tileLine dans PlaneRow : leurs positions sont vérifiées
-   ici. */
-#if defined(__sh__) && SUPERVDP_ASM
+   ici. Hypothèse bus32 : toujours la fusion en C (merge_sh2.S écrit des
+   mots de 16 bits). */
+#if defined(__sh__) && SUPERVDP_ASM && !HYPO_BUS32
 #include <stddef.h>
 void merge_span_sh2(Dest d, const PlaneRow *pa, unsigned xa, const PlaneRow *pb,
                     unsigned xb, unsigned n);
@@ -460,10 +560,21 @@ typedef struct {
     uint16_t kind;
 } Run;
 
-/* Segments formés sur LINE_SPAN pixels, de la colonne scrollAX - 1 à la
-   colonne scrollAX + FB_WIDTH de A : de quoi dessiner la ligne avec ou sans
-   décalage (voir compose_line). */
-#define LINE_SPAN (FB_WIDTH + 2)
+/* Décalage d'écran le plus grand (valeur de SFT) : 1 sur la vraie 32X,
+   3 avec l'hypothèse bus32 (4 pixels par mot). */
+#if HYPO_BUS32
+#define MAX_SHIFT 3
+#else
+#define MAX_SHIFT 1
+#endif
+
+/* Segments formés sur LINE_SPAN pixels, depuis la colonne
+   scrollAX - MAX_SHIFT de A : de quoi dessiner la ligne avec n'importe
+   quel décalage (voir compose_line). Vraie 32X : 322 pixels, de
+   scrollAX - 1 à scrollAX + 320. Bus32 : 262 pixels, de scrollAX - 3 à
+   scrollAX + 258 (une ligne décalée de 1 fait 260 pixels depuis
+   scrollAX - 1). */
+#define LINE_SPAN (FB_WIDTH + FB_LINE_EXTRA + MAX_SHIFT - 1)
 
 /* Une tile de A par segment au pire, plus les deux tiles entamées */
 #define MAX_RUNS (LINE_SPAN / TILE_SIZE + 2)
@@ -474,6 +585,10 @@ typedef struct {
    tools/sh2cycles ; seule leur proportion compte. */
 #define ODD_WORD_EXTRA 7
 #define BOUNDARY_WORD_EXTRA 50
+/* Hypothèse bus32 : surcoût d'un mot quand la ligne n'est pas alignée sur
+   4 pixels dans le plan (mot de 32 bits recomposé par out32). Estimation,
+   à mesurer avec tools/sh2cycles. */
+#define HALF_WORD_EXTRA 1
 
 int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
                  int scrollAX, int worldAY, const Tilemap *planeB, int scrollBX,
@@ -497,18 +612,26 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
           variable locale (un registre) ; le segment n'est rangé qu'une fois
           terminé. On compte au passage les pixels copiés depuis A (opaques)
           et depuis B (transparents), pour le choix du décalage. */
-    const unsigned xs = wrapIn(scrollAX - 1, pa.width);
+    const unsigned xs = wrapIn(scrollAX - MAX_SHIFT, pa.width);
     const unsigned col0 = xs >> TILE_SHIFT; /* tile entamée */
     const unsigned firstSx = TILE_SIZE - (xs & (TILE_SIZE - 1));
-/* Colonnes de tile qui suivent la tile entamée : SPAN_COLS, une de plus
-   si la ligne entame sa première tile par son dernier pixel (firstSx = 1).
-   20 ou 21 pour la vraie 32X (LINE_SPAN = 322), 16 ou 17 pour
-   l'hypothèse bus32 (LINE_SPAN = 258). */
+/* Colonnes de tile qui suivent la tile entamée : SPAN_COLS + 1 si la
+   ligne entame sa première tile par l'un de ses derniers pixels
+   (firstSx < FIRST_SX_LIMIT), SPAN_COLS sinon. Vraie 32X (LINE_SPAN =
+   322) : 21 si firstSx = 1, 20 sinon. Bus32 (262) : 17 si firstSx < 6,
+   16 sinon. */
 #define SPAN_COLS ((LINE_SPAN - 2) / TILE_SIZE)
-#if (LINE_SPAN - 2) % TILE_SIZE != 0 || TILE_SIZE != 16 || SPAN_COLS + 1 > 25
+#define FIRST_SX_LIMIT (LINE_SPAN - TILE_SIZE * SPAN_COLS)
+#if TILE_SIZE != 16 || SPAN_COLS + 1 > 25 || FIRST_SX_LIMIT < 2 ||            \
+    FIRST_SX_LIMIT > TILE_SIZE
 #error "nombre de colonnes de la ligne (masque de 'bits') à revoir"
 #endif
 #define COLS_MASK(n) (0xFFFFFFFFu << (32 - (n)))
+#if FIRST_SX_LIMIT == 2
+#define MANY_COLS(firstSx) ((firstSx) == 1) /* même code qu'avant */
+#else
+#define MANY_COLS(firstSx) ((firstSx) < FIRST_SX_LIMIT)
+#endif
     Run runs[MAX_RUNS];
     Run *run = runs;
     unsigned start = 0;
@@ -527,8 +650,8 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
     /* Bits des colonnes suivantes, col0 + 1 et au-delà, en tête de
        'bits' : 32 bits lus depuis l'octet qui contient le premier, puis
        décalés de 0 à 7 bits ; il en reste au moins 25. On garde ceux des
-       colonnes de la ligne : SPAN_COLS + 1 si elle entame sa première tile
-       par son dernier pixel (firstSx = 1), SPAN_COLS sinon. */
+       colonnes de la ligne : SPAN_COLS + 1 ou SPAN_COLS (voir
+       MANY_COLS). */
     const unsigned b = col0 + 1;
     const uint8_t *const p8 =
         planeA->classChanges + yA * planeA->changeBytes + (b >> 3);
@@ -540,7 +663,7 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
         bits <<= 2;
     if (b & 1)
         bits <<= 1;
-    bits &= firstSx == 1 ? COLS_MASK(SPAN_COLS + 1) : COLS_MASK(SPAN_COLS);
+    bits &= MANY_COLS(firstSx) ? COLS_MASK(SPAN_COLS + 1) : COLS_MASK(SPAN_COLS);
 
     for (unsigned sx = firstSx; bits != 0; bits <<= 1, sx += TILE_SIZE) {
         if ((int32_t)bits >= 0)
@@ -576,6 +699,35 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
           source impaire (un A impair coûte aussi ses mots de frontière). */
     /* Largeurs multiples de TILE_SIZE, donc paires : ramener un scroll
        dans le plan ne change pas sa parité. */
+#if HYPO_BUS32
+    /* Hypothèse bus32 : décalage de 0 à 3. Avec le décalage s, la ligne
+       part des colonnes scrollAX - s de A et scrollBX - s de B. Pour
+       chaque plan, selon sa colonne de départ modulo 4 : 0, ses tiles
+       entières s'écrivent en mots de 32 bits alignés (rien de plus) ;
+       2, chaque mot de 32 bits est recomposé à cheval sur deux mots
+       lus ; impaire, la copie depuis une source impaire et, pour A, les
+       mots de frontière. On garde le décalage le moins cher, le plus
+       petit à égalité (une ligne non décalée fait 256 pixels, 260
+       sinon). */
+    const unsigned costA = fromA / 2 * ODD_WORD_EXTRA +
+                           (unsigned)(lastRun - runs) * BOUNDARY_WORD_EXTRA;
+    const unsigned costB = fromB / 2 * ODD_WORD_EXTRA;
+    const unsigned halfA = fromA / 2 * HALF_WORD_EXTRA;
+    const unsigned halfB = fromB / 2 * HALF_WORD_EXTRA;
+    int shift = 0;
+    unsigned best = ~0u;
+    for (int s = 0; s <= MAX_SHIFT; s++) {
+        const unsigned ra = (unsigned)(scrollAX - s) & 3;
+        const unsigned rb = (unsigned)(scrollBX - s) & 3;
+        const unsigned c = (ra & 1 ? costA : ra ? halfA : 0) +
+                           (rb & 1 ? costB : rb ? halfB : 0);
+        if (c < best) {
+            best = c;
+            shift = s;
+        }
+    }
+    const unsigned width = shift ? FB_WIDTH + FB_LINE_EXTRA : FB_WIDTH;
+#else
     const unsigned evenA = !(scrollAX & 1);
     const unsigned evenB = !(scrollBX & 1);
     const unsigned costA = fromA / 2 * ODD_WORD_EXTRA +
@@ -584,11 +736,12 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
     const unsigned costNoShift = (evenA ? 0 : costA) + (evenB ? 0 : costB);
     const unsigned costShift = (evenA ? costA : 0) + (evenB ? costB : 0);
     const int shift = costShift < costNoShift;
+    const unsigned width = FB_WIDTH + 2 * (unsigned)shift;
+#endif
 
     /* Ligne dessinée : 'width' pixels ; son pixel 0 est le pixel 'skip'
        des segments, et montre la colonne xa0 de A et xb0 de B. */
-    const unsigned width = FB_WIDTH + 2 * (unsigned)shift;
-    const unsigned skip = 1 - (unsigned)shift;
+    const unsigned skip = MAX_SHIFT - (unsigned)shift;
     const unsigned xa0 = advance(xs, skip, pa.width);
     const unsigned xb0 = wrapIn(scrollBX - shift, pb.width);
 
@@ -600,9 +753,28 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
           écrire, toujours paire. Un segment qui commence à une colonne
           impaire a déjà eu son premier pixel écrit avec le mot de
           frontière précédent. */
+#if HYPO_BUS32
+    LineOut out;
+#if defined(__sh__)
+    out.p = (volatile uint32_t *)(VDP_DRAM_ADDRESS + offset);
+#else
+    out.off = offset;
+#endif
+    out.hi = 0;
+    out.half = 0;
+#define LINE_DEST(o) lineDest(&out, (o))
+#else
+#define LINE_DEST(o) DEST(o)
+#endif
+
     unsigned p = 0;
     for (run = runs; run <= lastRun; run++) {
+#if MAX_SHIFT > 1
+        /* Les premiers segments peuvent finir avant le pixel 'skip' */
+        unsigned runEnd = run->end > skip ? (unsigned)run->end - skip : 0;
+#else
         unsigned runEnd = (unsigned)run->end - skip;
+#endif
         if (runEnd > width)
             runEnd = width;
         const unsigned end = runEnd & ~1u; /* mots entiers */
@@ -613,14 +785,14 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
 
             /* Colonne de départ calculée pour le seul plan lu */
             if (run->kind == RUN_COPY_B) {
-                copyB(DEST(offset + p), &pb, advance(xb0, p, pb.width), count,
+                copyB(LINE_DEST(offset + p), &pb, advance(xb0, p, pb.width), count,
                       cost);
             } else {
                 const unsigned xa = advance(xa0, p, pa.width);
                 if (run->kind == RUN_COPY_A)
-                    copyA(DEST(offset + p), &pa, xa, count, cost);
+                    copyA(LINE_DEST(offset + p), &pa, xa, count, cost);
                 else
-                    MERGE_SPAN(DEST(offset + p), &pa, xa, &pb,
+                    MERGE_SPAN(LINE_DEST(offset + p), &pa, xa, &pb,
                                advance(xb0, p, pb.width), count, cost);
             }
             p = end;
@@ -630,9 +802,13 @@ int compose_line(uint32_t offset, const Tileset *tiles, const Tilemap *planeA,
            cheval sur ce segment et le suivant. */
         if (runEnd & 1) {
             COST_ADD(cost, runs, 1);
-            mergeWord(DEST(offset + p), &pa, xa0, &pb, xb0, p, cost);
+            mergeWord(LINE_DEST(offset + p), &pa, xa0, &pb, xb0, p, cost);
             p += 2;
         }
     }
+#if HYPO_BUS32
+    lineEnd(&out, offset + width);
+#endif
+#undef LINE_DEST
     return shift;
 }

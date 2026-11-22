@@ -6,10 +6,13 @@
    nul, sinon pixel du plan B. Pour chaque ligne composée, on vérifie :
    - les 320 pixels AFFICHÉS, contre la référence : compose_line renvoie
      le décalage d'écran de la ligne (SFT) ; avec décalage, le pixel x de
-     l'écran est le pixel x + 1 de la ligne ;
+     l'écran est le pixel x + SFT de la ligne ;
    - les écritures : 160 par ligne (161 avec décalage), toutes en 16 bits,
      à des adresses paires, chaque mot de la ligne écrit exactement une
      fois, rien hors de la ligne.
+   Hypothèse bus32 : 256 pixels affichés, décalage de 0 à 3 ; 64 écritures
+   par ligne (65 avec décalage), toutes en 32 bits, à des adresses
+   multiples de 4.
 
    Jeux d'essai :
    1. la trajectoire de la démo : xA de 0 à 448, xB synchronisé, toutes
@@ -35,8 +38,8 @@
 #include <string.h>
 
 #define SCREEN_HEIGHT 224
-#define LINE_WORDS (FB_WIDTH / 2)
 #define MAX_LINE_WORDS (FB_PITCH / 2)
+#define WRITE_BYTES VDP_BUS_BYTES /* taille attendue des écritures */
 
 static const Tileset *const tiles = &asset_tiles;
 static const Tilemap *const planeA = &asset_plane_a;
@@ -51,12 +54,14 @@ static const Tilemap *const planeB = &asset_plane_b;
 
 static uint8_t fb[VDP_DRAM_SIZE];
 static int wordWrites[MAX_LINE_WORDS]; /* écritures de chaque mot */
-static long badWrites = 0;             /* hors ligne ou mal alignées */
+static long badWrites = 0; /* hors ligne, mal alignées ou mauvaise taille */
 static long writeCount = 0;
+static long writes16 = 0, writes32 = 0;
 
 void vdp_dram_write16(uint32_t offset, uint16_t pixels) {
     writeCount++;
-    if ((offset & 1) || offset < LINE_OFFSET ||
+    writes16++;
+    if (WRITE_BYTES != 2 || (offset & 1) || offset < LINE_OFFSET ||
         offset >= LINE_OFFSET + FB_PITCH) {
         badWrites++;
         return;
@@ -64,6 +69,23 @@ void vdp_dram_write16(uint32_t offset, uint16_t pixels) {
     fb[offset] = (uint8_t)(pixels >> 8);
     fb[offset + 1] = (uint8_t)pixels;
     wordWrites[(offset - LINE_OFFSET) / 2]++;
+}
+
+/* Hypothèse bus32 seulement : un mot de 32 bits, 4 pixels */
+void vdp_dram_write32(uint32_t offset, uint32_t pixels) {
+    writeCount++;
+    writes32++;
+    if (WRITE_BYTES != 4 || (offset & 3) || offset < LINE_OFFSET ||
+        offset + 4 > LINE_OFFSET + FB_PITCH) {
+        badWrites++;
+        return;
+    }
+    fb[offset] = (uint8_t)(pixels >> 24);
+    fb[offset + 1] = (uint8_t)(pixels >> 16);
+    fb[offset + 2] = (uint8_t)(pixels >> 8);
+    fb[offset + 3] = (uint8_t)pixels;
+    wordWrites[(offset - LINE_OFFSET) / 2]++;
+    wordWrites[(offset - LINE_OFFSET) / 2 + 1]++;
 }
 
 /* compose.c n'en a pas besoin, mais vdp.h les déclare */
@@ -99,6 +121,7 @@ static uint8_t referencePixel(int sx, int xA, int yA, int xB, int yB) {
 
 static long linesChecked = 0;
 static long linesShifted = 0;
+static long linesByShift[4]; /* lignes par valeur de SFT */
 static long failures = 0;
 static ComposeCost cost;
 
@@ -111,10 +134,14 @@ static void checkLine(int xA, int yA, int xB, int yB) {
         compose_line(LINE_OFFSET, tiles, planeA, xA, yA, planeB, xB, yB, &cost);
     linesChecked++;
     linesShifted += shift != 0;
+    if (shift >= 0 && shift <= 3)
+        linesByShift[shift]++;
 
-    const int words = LINE_WORDS + shift;
-    int ok = (shift == 0 || shift == 1) && writeCount - writesBefore == words &&
-             badWrites == badBefore;
+    /* Mots de 16 bits de la ligne, et écritures attendues */
+    const int words = (FB_WIDTH + (shift ? FB_LINE_EXTRA : 0)) / 2;
+    const int writes = words * 2 / WRITE_BYTES;
+    int ok = shift >= 0 && shift <= SCREEN_SHIFT_SFT &&
+             writeCount - writesBefore == writes && badWrites == badBefore;
     for (int w = 0; w < MAX_LINE_WORDS; w++)
         ok &= wordWrites[w] == (w < words);
 
@@ -250,11 +277,13 @@ int main(int argc, char *argv[]) {
     }
 
     testDemoPath();
+    printf("   decalage choisi (SFT 0/1/2/3) : %ld / %ld / %ld / %ld lignes\n",
+           linesByShift[0], linesByShift[1], linesByShift[2], linesByShift[3]);
     testAllColumns();
     testRandom();
 
     printf("%ld lignes verifiees (%ld decalees), %ld echecs, %ld ecritures "
-           "(toutes 16 bits)\n",
-           linesChecked, linesShifted, failures, writeCount);
+           "(%ld en 16 bits, %ld en 32 bits)\n",
+           linesChecked, linesShifted, failures, writeCount, writes16, writes32);
     return failures != 0 || badWrites != 0;
 }
