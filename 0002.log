@@ -1,0 +1,131 @@
+olivier@Mac SuperVDP-bus32 % git am ~/Downloads/0002-hypothese-bus32-etape-2.patch 
+Applying: Hypothèse bus32, étape 2 : le moteur écrit des mots de 32 bits
+olivier@Mac SuperVDP-bus32 % make test
+HYPO= BUILD=build tests/run_tests.sh
+== compose_line
+1. trajectoire de la demo : 100576 lignes (449 images)
+   modele de couts, moyenne par image (deux CPU) : 502668 cycles hors ecritures FB
+   par image : 33032 mots copies source paire, 1194 impaire, 1725 fusionnes ; 5150 morceaux de tile ; 673 segments
+   decalage choisi (SFT 0/1/2/3) : 50405 / 50171 / 0 / 0 lignes
+2. toutes les colonnes de A x 40 valeurs de xB : 768000 lignes
+3. lignes au hasard : 300000 lignes
+1168576 lignes verifiees (609872 decalees), 0 echecs, 187582032 ecritures (187582032 en 16 bits, 0 en 32 bits)
+== simulateur complet
+OK    depart (xA=0, xB=0)
+      [image 100] acces bus par image : master derniere 17920, moyenne 17743, max (periode) 17920 | slave derniere 17920, moyenne 17743, max (periode) 17920 | total derniere 35840 = 46.7 % du plafond 76800 (ecran entier en 16 bits : 35840) | images 101
+      [image 100] cycles bus VDP (partages) : 35840 ecritures x 5 = 179200 / 384000 (46.7 %)
+      [image 100] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 233158 + ecritures = 286918..322758 / 384000 (74.7..84.1 %), max modele (periode) 233158 | slave 223228 + ecritures = 276988..312828 / 384000 (72.1..81.5 %), max modele (periode) 223228
+      [image 100] derniere image : 0.75 image(s) de 1/60 s au mieux -> 60 images/s
+OK    impair (xA=37, xB=29)
+      [image 100] acces bus par image : master derniere 18032, moyenne 17821, max (periode) 18032 | slave derniere 18032, moyenne 17821, max (periode) 18032 | total derniere 36064 = 47.0 % du plafond 76800 (ecran entier en 16 bits : 35840) | images 101
+      [image 100] cycles bus VDP (partages) : 36064 ecritures x 5 = 180320 / 384000 (47.0 %)
+      [image 100] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 254506 + ecritures = 308602..344666 / 384000 (80.4..89.8 %), max modele (periode) 263700 | slave 244353 + ecritures = 298449..334513 / 384000 (77.7..87.1 %), max modele (periode) 253152
+      [image 100] derniere image : 0.80 image(s) de 1/60 s au mieux -> 60 images/s
+OK    milieu (xA=100, xB=79)
+      [image 180] acces bus par image : master derniere 17970, moyenne 17871, max (periode) 18032 | slave derniere 17970, moyenne 17871, max (periode) 18032 | total derniere 35940 = 46.8 % du plafond 76800 (ecran entier en 16 bits : 35840) | images 181
+      [image 180] cycles bus VDP (partages) : 35940 ecritures x 5 = 179700 / 384000 (46.8 %)
+      [image 180] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 273835 + ecritures = 327745..363685 / 384000 (85.4..94.7 %), max modele (periode) 277802 | slave 264686 + ecritures = 318596..354536 / 384000 (83.0..92.3 %), max modele (periode) 267832
+      [image 180] derniere image : 0.85 image(s) de 1/60 s au mieux -> 60 images/s
+OK    bout (xA=448, xB=352)
+      [image 280] acces bus par image : master derniere 17920, moyenne 17867, max (periode) 17973 | slave derniere 17920, moyenne 17867, max (periode) 17973 | total derniere 35840 = 46.7 % du plafond 76800 (ecran entier en 16 bits : 35840) | images 281
+      [image 280] cycles bus VDP (partages) : 35840 ecritures x 5 = 179200 / 384000 (46.7 %)
+      [image 280] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 241231 + ecritures = 294991..330831 / 384000 (76.8..86.2 %), max modele (periode) 287410 | slave 233201 + ecritures = 286961..322801 / 384000 (74.7..84.1 %), max modele (periode) 277395
+      [image 280] derniere image : 0.77 image(s) de 1/60 s au mieux -> 60 images/s
+OK    retour (xA=438, xB=344)
+      [image 280] acces bus par image : master derniere 17920, moyenne 17869, max (periode) 18032 | slave derniere 17920, moyenne 17869, max (periode) 18032 | total derniere 35840 = 46.7 % du plafond 76800 (ecran entier en 16 bits : 35840) | images 281
+      [image 280] cycles bus VDP (partages) : 35840 ecritures x 5 = 179200 / 384000 (46.7 %)
+      [image 280] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 257641 + ecritures = 311401..347241 / 384000 (81.1..90.4 %), max modele (periode) 287410 | slave 249385 + ecritures = 303145..338985 / 384000 (78.9..88.3 %), max modele (periode) 277395
+      [image 280] derniere image : 0.81 image(s) de 1/60 s au mieux -> 60 images/s
+Tous les tests sont passes.
+olivier@Mac SuperVDP-bus32 % make HYPO=bus32 stats                                
+cmake -S . -B build-bus32 -DSUPERVDP_HYPO=bus32
+-- Hypothese bus32 : 256 x 224, chemin 32 bits vers la DRAM
+-- Processing MiniFB
+-- Done MiniFB
+-- Configuring done (0.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/olivier/Documents/sega/SuperVDP-bus32/build-bus32
+cmake --build build-bus32
+[  4%] Built target bmp2c
+[ 11%] Built target demo_assets
+[ 46%] Built target minifb
+[ 48%] Building C object CMakeFiles/supervdp.dir/supervdp/supervdp.c.o
+[ 51%] Building C object CMakeFiles/supervdp.dir/supervdp/compose.c.o
+[ 53%] Building C object CMakeFiles/supervdp.dir/supervdp/framebuffer.c.o
+[ 55%] Linking CXX executable supervdp
+[ 67%] Built target supervdp
+[ 69%] Building C object CMakeFiles/supervdp_headless.dir/supervdp/supervdp.c.o
+[ 72%] Building C object CMakeFiles/supervdp_headless.dir/supervdp/compose.c.o
+[ 74%] Building C object CMakeFiles/supervdp_headless.dir/supervdp/framebuffer.c.o
+[ 76%] Linking C executable supervdp_headless
+[ 88%] Built target supervdp_headless
+[ 90%] Building C object CMakeFiles/test_compose.dir/tests/test_compose.c.o
+[ 93%] Building C object CMakeFiles/test_compose.dir/supervdp/compose.c.o
+[ 95%] Linking C executable test_compose
+[ 95%] Built target test_compose
+[100%] Built target minifb_version_info
+VDP_STATS=1 ./build-bus32/supervdp
+[VDP 5.0 s] V_INT levees 300 | master : traitees 300, non acquittees 0 | slave : traitees 0, non acquittees 0 | H_INT levees 67331, master traitees 67330 (en retard 0), slave traitees 0 (en retard 0)
+[VDP 5.0 s] VBlank 300, vus master 301 (rates 18446744073709551615), vus slave 0 (rates 300) | debut/fin VBlank en retard 1, retard max (periode) 868.3 us, images sautees 0 | images produites 300, affichees 297, ecrasees 2 | affichage : tour max (periode) 48.7 ms (mfb_update 48.7 ms, mfb_wait_sync 26.9 ms), tours lents 1
+[VDP 5.0 s] ecritures FB, derniere image (8/16/32 bits) : master normale 0/0/7241, overwrite 0/0/0 | slave normale 0/0/7242, overwrite 0/0/0
+[VDP 5.0 s] acces bus par image : master derniere 7241, moyenne 7208, max (periode) 7280 | slave derniere 7242, moyenne 7208, max (periode) 7280 | total derniere 14483 = 18.9 % du plafond 76800 (ecran entier en 32 bits : 14336) | images 301
+[VDP 5.0 s] cycles bus VDP (partages) : 14483 ecritures x 5 = 72415 / 384000 (18.9 %)
+[VDP 5.0 s] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 226265 + ecritures = 247988..262470 / 384000 (64.6..68.4 %), max modele (periode) 242711 | slave 215159 + ecritures = 236885..251369 / 384000 (61.7..65.5 %), max modele (periode) 232563
+[VDP 5.0 s] derniere image : 0.65 image(s) de 1/60 s au mieux -> 60 images/s
+[VDP 10.0 s] V_INT levees 600 | master : traitees 600, non acquittees 0 | slave : traitees 0, non acquittees 0 | H_INT levees 134530, master traitees 134529 (en retard 0), slave traitees 0 (en retard 0)
+[VDP 10.0 s] VBlank 600, vus master 601 (rates 18446744073709551615), vus slave 0 (rates 600) | debut/fin VBlank en retard 1, retard max (periode) 11.3 us, images sautees 0 | images produites 600, affichees 597, ecrasees 2 | affichage : tour max (periode) 17.2 ms (mfb_update 0.0 ms, mfb_wait_sync 17.1 ms), tours lents 1
+[VDP 10.0 s] ecritures FB, derniere image (8/16/32 bits) : master normale 0/0/7168, overwrite 0/0/0 | slave normale 0/0/7168, overwrite 0/0/0
+[VDP 10.0 s] acces bus par image : master derniere 7168, moyenne 7228, max (periode) 7280 | slave derniere 7168, moyenne 7228, max (periode) 7280 | total derniere 14336 = 18.7 % du plafond 76800 (ecran entier en 32 bits : 14336) | images 601
+[VDP 10.0 s] cycles bus VDP (partages) : 14336 ecritures x 5 = 71680 / 384000 (18.7 %)
+[VDP 10.0 s] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 201023 + ecritures = 222527..236863 / 384000 (57.9..61.7 %), max modele (periode) 229958 | slave 192993 + ecritures = 214497..228833 / 384000 (55.9..59.6 %), max modele (periode) 218852
+[VDP 10.0 s] derniere image : 0.58 image(s) de 1/60 s au mieux -> 60 images/s
+[VDP 15.0 s] V_INT levees 900 | master : traitees 900, non acquittees 0 | slave : traitees 0, non acquittees 0 | H_INT levees 201731, master traitees 201730 (en retard 0), slave traitees 0 (en retard 0)
+[VDP 15.0 s] VBlank 900, vus master 901 (rates 18446744073709551615), vus slave 0 (rates 900) | debut/fin VBlank en retard 1, retard max (periode) 1.0 us, images sautees 0 | images produites 900, affichees 897, ecrasees 2 | affichage : tour max (periode) 18.4 ms (mfb_update 0.0 ms, mfb_wait_sync 18.4 ms), tours lents 1
+[VDP 15.0 s] ecritures FB, derniere image (8/16/32 bits) : master normale 0/0/7207, overwrite 0/0/0 | slave normale 0/0/7206, overwrite 0/0/0
+[VDP 15.0 s] acces bus par image : master derniere 7207, moyenne 7230, max (periode) 7280 | slave derniere 7206, moyenne 7230, max (periode) 7280 | total derniere 14413 = 18.8 % du plafond 76800 (ecran entier en 32 bits : 14336) | images 901
+[VDP 15.0 s] cycles bus VDP (partages) : 14413 ecritures x 5 = 72065 / 384000 (18.8 %)
+[VDP 15.0 s] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 213757 + ecritures = 235378..249792 / 384000 (61.3..65.0 %), max modele (periode) 228932 | slave 202209 + ecritures = 223827..238239 / 384000 (58.3..62.0 %), max modele (periode) 218098
+[VDP 15.0 s] derniere image : 0.61 image(s) de 1/60 s au mieux -> 60 images/s
+[VDP 20.0 s] V_INT levees 1200 | master : traitees 1200, non acquittees 0 | slave : traitees 0, non acquittees 0 | H_INT levees 268931, master traitees 268930 (en retard 0), slave traitees 0 (en retard 0)
+[VDP 20.0 s] VBlank 1200, vus master 1201 (rates 18446744073709551615), vus slave 0 (rates 1200) | debut/fin VBlank en retard 1, retard max (periode) 1.7 us, images sautees 0 | images produites 1200, affichees 1197, ecrasees 2 | affichage : tour max (periode) 17.2 ms (mfb_update 0.0 ms, mfb_wait_sync 17.2 ms), tours lents 1
+[VDP 20.0 s] ecritures FB, derniere image (8/16/32 bits) : master normale 0/0/7168, overwrite 0/0/0 | slave normale 0/0/7168, overwrite 0/0/0
+[VDP 20.0 s] acces bus par image : master derniere 7168, moyenne 7234, max (periode) 7280 | slave derniere 7168, moyenne 7234, max (periode) 7280 | total derniere 14336 = 18.7 % du plafond 76800 (ecran entier en 32 bits : 14336) | images 1201
+[VDP 20.0 s] cycles bus VDP (partages) : 14336 ecritures x 5 = 71680 / 384000 (18.7 %)
+[VDP 20.0 s] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 189876 + ecritures = 211380..225716 / 384000 (55.0..58.8 %), max modele (periode) 242711 | slave 180329 + ecritures = 201833..216169 / 384000 (52.6..56.3 %), max modele (periode) 232563
+[VDP 20.0 s] derniere image : 0.55 image(s) de 1/60 s au mieux -> 60 images/s
+[VDP 25.0 s] V_INT levees 1500 | master : traitees 1500, non acquittees 0 | slave : traitees 0, non acquittees 0 | H_INT levees 336131, master traitees 336130 (en retard 0), slave traitees 0 (en retard 0)
+[VDP 25.0 s] VBlank 1500, vus master 1501 (rates 18446744073709551615), vus slave 0 (rates 1500) | debut/fin VBlank en retard 1, retard max (periode) 3.0 us, images sautees 0 | images produites 1500, affichees 1497, ecrasees 2 | affichage : tour max (periode) 18.3 ms (mfb_update 0.0 ms, mfb_wait_sync 18.3 ms), tours lents 1
+[VDP 25.0 s] ecritures FB, derniere image (8/16/32 bits) : master normale 0/0/7280, overwrite 0/0/0 | slave normale 0/0/7280, overwrite 0/0/0
+[VDP 25.0 s] acces bus par image : master derniere 7280, moyenne 7237, max (periode) 7280 | slave derniere 7280, moyenne 7237, max (periode) 7280 | total derniere 14560 = 19.0 % du plafond 76800 (ecran entier en 32 bits : 14336) | images 1501
+[VDP 25.0 s] cycles bus VDP (partages) : 14560 ecritures x 5 = 72800 / 384000 (19.0 %)
+[VDP 25.0 s] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 206586 + ecritures = 228426..242986 / 384000 (59.5..63.3 %), max modele (periode) 242711 | slave 195275 + ecritures = 217115..231675 / 384000 (56.5..60.3 %), max modele (periode) 232563
+[VDP 25.0 s] derniere image : 0.59 image(s) de 1/60 s au mieux -> 60 images/s
+[VDP 30.0 s] V_INT levees 1800 | master : traitees 1800, non acquittees 0 | slave : traitees 0, non acquittees 0 | H_INT levees 403330, master traitees 403329 (en retard 0), slave traitees 0 (en retard 0)
+[VDP 30.0 s] VBlank 1800, vus master 1801 (rates 18446744073709551615), vus slave 0 (rates 1800) | debut/fin VBlank en retard 1, retard max (periode) 1.0 us, images sautees 0 | images produites 1800, affichees 1797, ecrasees 2 | affichage : tour max (periode) 17.1 ms (mfb_update 0.0 ms, mfb_wait_sync 17.1 ms), tours lents 1
+[VDP 30.0 s] ecritures FB, derniere image (8/16/32 bits) : master normale 0/0/7168, overwrite 0/0/0 | slave normale 0/0/7168, overwrite 0/0/0
+[VDP 30.0 s] acces bus par image : master derniere 7168, moyenne 7238, max (periode) 7280 | slave derniere 7168, moyenne 7238, max (periode) 7280 | total derniere 14336 = 18.7 % du plafond 76800 (ecran entier en 32 bits : 14336) | images 1801
+[VDP 30.0 s] cycles bus VDP (partages) : 14336 ecritures x 5 = 71680 / 384000 (18.7 %)
+[VDP 30.0 s] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 206320 + ecritures = 227824..242160 / 384000 (59.3..63.1 %), max modele (periode) 228932 | slave 198207 + ecritures = 219711..234047 / 384000 (57.2..60.9 %), max modele (periode) 218098
+[VDP 30.0 s] derniere image : 0.59 image(s) de 1/60 s au mieux -> 60 images/s
+[VDP 35.0 s] V_INT levees 2100 | master : traitees 2100, non acquittees 0 | slave : traitees 0, non acquittees 0 | H_INT levees 470531, master traitees 470530 (en retard 0), slave traitees 0 (en retard 0)
+[VDP 35.0 s] VBlank 2100, vus master 2101 (rates 18446744073709551615), vus slave 0 (rates 2100) | debut/fin VBlank en retard 1, retard max (periode) 1.0 us, images sautees 0 | images produites 2100, affichees 2097, ecrasees 2 | affichage : tour max (periode) 17.2 ms (mfb_update 0.0 ms, mfb_wait_sync 17.2 ms), tours lents 1
+[VDP 35.0 s] ecritures FB, derniere image (8/16/32 bits) : master normale 0/0/7218, overwrite 0/0/0 | slave normale 0/0/7218, overwrite 0/0/0
+[VDP 35.0 s] acces bus par image : master derniere 7218, moyenne 7240, max (periode) 7280 | slave derniere 7218, moyenne 7240, max (periode) 7280 | total derniere 14436 = 18.8 % du plafond 76800 (ecran entier en 32 bits : 14336) | images 2101
+[VDP 35.0 s] cycles bus VDP (partages) : 14436 ecritures x 5 = 72180 / 384000 (18.8 %)
+[VDP 35.0 s] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 227608 + ecritures = 249262..263698 / 384000 (64.9..68.7 %), max modele (periode) 242711 | slave 218563 + ecritures = 240217..254653 / 384000 (62.6..66.3 %), max modele (periode) 232563
+[VDP 35.0 s] derniere image : 0.65 image(s) de 1/60 s au mieux -> 60 images/s
+[VDP 40.0 s] V_INT levees 2400 | master : traitees 2400, non acquittees 0 | slave : traitees 0, non acquittees 0 | H_INT levees 537730, master traitees 537729 (en retard 0), slave traitees 0 (en retard 0)
+[VDP 40.0 s] VBlank 2400, vus master 2401 (rates 18446744073709551615), vus slave 0 (rates 2400) | debut/fin VBlank en retard 1, retard max (periode) 1.0 us, images sautees 0 | images produites 2400, affichees 2397, ecrasees 2 | affichage : tour max (periode) 18.7 ms (mfb_update 0.0 ms, mfb_wait_sync 18.7 ms), tours lents 1
+[VDP 40.0 s] ecritures FB, derniere image (8/16/32 bits) : master normale 0/0/7168, overwrite 0/0/0 | slave normale 0/0/7168, overwrite 0/0/0
+[VDP 40.0 s] acces bus par image : master derniere 7168, moyenne 7237, max (periode) 7280 | slave derniere 7168, moyenne 7237, max (periode) 7280 | total derniere 14336 = 18.7 % du plafond 76800 (ecran entier en 32 bits : 14336) | images 2401
+[VDP 40.0 s] cycles bus VDP (partages) : 14336 ecritures x 5 = 71680 / 384000 (18.7 %)
+[VDP 40.0 s] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 189876 + ecritures = 211380..225716 / 384000 (55.0..58.8 %), max modele (periode) 238657 | slave 180329 + ecritures = 201833..216169 / 384000 (52.6..56.3 %), max modele (periode) 228929
+[VDP 40.0 s] derniere image : 0.55 image(s) de 1/60 s au mieux -> 60 images/s
+[VDP fin 41.4 s] V_INT levees 2483 | master : traitees 2483, non acquittees 0 | slave : traitees 0, non acquittees 0 | H_INT levees 556211, master traitees 556210 (en retard 0), slave traitees 0 (en retard 0)
+[VDP fin 41.4 s] VBlank 2483, vus master 2484 (rates 18446744073709551615), vus slave 0 (rates 2483) | debut/fin VBlank en retard 1, retard max (periode) 1.0 us, images sautees 0 | images produites 2483, affichees 2480, ecrasees 2 | affichage : tour max (periode) 17.3 ms (mfb_update 0.0 ms, mfb_wait_sync 17.3 ms), tours lents 1
+[VDP fin 41.4 s] ecritures FB, derniere image (8/16/32 bits) : master normale 0/0/7168, overwrite 0/0/0 | slave normale 0/0/7168, overwrite 0/0/0
+[VDP fin 41.4 s] acces bus par image : master derniere 7168, moyenne 7234, max (periode) 7168 | slave derniere 7168, moyenne 7234, max (periode) 7168 | total derniere 14336 = 18.7 % du plafond 76800 (ecran entier en 32 bits : 14336) | images 2484
+[VDP fin 41.4 s] cycles bus VDP (partages) : 14336 ecritures x 5 = 71680 / 384000 (18.7 %)
+[VDP fin 41.4 s] cycles CPU estimes (modele du jeu + ecritures 3..5 c) : master 189876 + ecritures = 211380..225716 / 384000 (55.0..58.8 %), max modele (periode) 189876 | slave 180329 + ecritures = 201833..216169 / 384000 (52.6..56.3 %), max modele (periode) 180329
+[VDP fin 41.4 s] derniere image : 0.55 image(s) de 1/60 s au mieux -> 60 images/s
+olivier@Mac SuperVDP-bus32 % 
