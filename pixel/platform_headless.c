@@ -16,14 +16,18 @@
    Plate-forme sans fenêtre, pour les tests et les captures.
 
    Mêmes règles que platform_minifb.c (threads Master et Slave, balayage de
-   262 lignes à 60 Hz en temps réel, V_INT par signal), mais l'image n'est
-   pas affichée : certaines images sont enregistrées en PPM, et la manette
+   262 lignes à 60 Hz en temps réel, V_INT par signal), sauf une : chaque
+   routine d'interruption est attendue jusqu'à son retour (voir
+   waitRoutinesDone), pour que les captures ne dépendent pas de la charge
+   de la machine. L'image n'est pas affichée : certaines images sont enregistrées en PPM, et la manette
    suit un scénario donné en ligne de commande. Les compteurs d'écritures
    dans le frame buffer sont affichés à chaque capture et à la fin.
 
    Usage :
-     supervdp_headless [--frames N] [--shot IMAGE:fichier.ppm]...
-                    [--pad DEBUT-FIN:BOUTONS]...
+     supervdp_headless [--frames N] [--latency US]
+                    [--shot IMAGE:fichier.ppm]... [--pad DEBUT-FIN:BOUTONS]...
+   --latency : chaque interruption est prise avec US microsecondes de
+   retard (hôte très chargé, pour les tests).
    Boutons : U D L R (croix), A B C, S (Start). Exemple :
      supervdp_headless --frames 120 --pad 10-60:R --shot 119:fin.ppm
    ========================================================================= */
@@ -70,21 +74,47 @@ static int64_t nowNs(void) {
 }
 
 /* Latence des interruptions. Sur la console, un SH2 prend une
-   interruption en quelques cycles (s'il ne l'a pas masquée). Ici, le
-   thread du CPU doit d'abord obtenir un processeur de l'hôte : sur une
-   machine chargée (ou à 2 cœurs), cela peut prendre plus d'une ligne, et
-   deux H_INT se confondraient. Le simulateur imite donc la garantie du
-   matériel : après une H_INT, la synchro vidéo attend que sa routine
-   l'ait acquittée, en cédant le processeur, au plus HINT_WAIT_NS. Au-delà,
-   la H_INT reste en attente et sera comptée en retard au HBlank suivant :
-   c'est alors une vraie faute du jeu (interruptions masquées, routine trop
-   longue). */
-#define HINT_WAIT_NS 50000 /* 50 µs, moins d'une ligne (63,5 µs) */
+   interruption en quelques cycles (s'il ne l'a pas masquée), et sa
+   routine a fini avant la ligne suivante. Ici, le thread du CPU doit
+   d'abord obtenir un processeur de l'hôte : sur une machine chargée, cela
+   peut prendre plus d'une ligne. La routine H_INT du Master écrit le
+   décalage d'écran (SFT) de la ligne suivante ; servie trop tard, cette
+   ligne s'affiche avec l'ancien décalage, et l'image capturée diffère de
+   la référence : un test qui échoue au hasard.
 
-static void waitHintServed(void) {
-    const int64_t limit = nowNs() + HINT_WAIT_NS;
-    while (interface_hint_waiting() && nowNs() < limit)
+   Cette plate-forme sert aux tests : elle imite donc STRICTEMENT la
+   garantie du matériel. Après chaque V_INT et chaque H_INT, la synchro
+   vidéo attend que les routines lancées soient TERMINÉES (et pas
+   seulement acquittées : la routine acquitte avant d'écrire SFT), en
+   cédant le processeur. Le balayage prend alors du retard sur l'horloge,
+   qu'il rattrape ensuite (les lignes suivantes partent aussitôt) ; seul
+   l'ordre des événements compte pour l'image, pas l'heure.
+   Garde-fou : au-delà de SERVE_LIMIT_NS (une routine qui ne revient pas,
+   des interruptions restées masquées...), on abandonne l'attente et on le
+   compte : c'est alors une vraie faute du jeu. Les attentes de plus d'une
+   ligne sont comptées aussi : elles montrent les moments où l'ancienne
+   attente (50 µs, comme la fenêtre) aurait faussé l'image. */
+#define SERVE_LIMIT_NS 1000000000LL /* 1 s */
+#define LINE_NS 63600               /* une ligne (262 lignes à 60 Hz) */
+
+static unsigned long _slowServes = 0;  /* routines servies en plus d'une ligne */
+static unsigned long _serveTimeouts = 0; /* attentes abandonnées */
+
+/* Attend que 'count' routines de plus que 'before' soient terminées */
+static void waitRoutinesDone(unsigned long before, int count) {
+    if (count <= 0)
+        return;
+    const int64_t start = nowNs();
+    while (interface_routines_done() - before < (unsigned long)count) {
+        const int64_t waited = nowNs() - start;
+        if (waited > SERVE_LIMIT_NS) {
+            _serveTimeouts++;
+            return;
+        }
         sched_yield();
+    }
+    if (nowNs() - start > LINE_NS)
+        _slowServes++;
 }
 
 /* Appelée dans chaque boucle d'attente du jeu : on y cède le processeur
@@ -117,11 +147,21 @@ void platform_raise_interrupt(int cpu) {
     pthread_kill(_cpuThread[cpu], INTERRUPT_SIGNAL);
 }
 
+/* Latence imposée (option --latency) : chaque signal d'interruption est
+   pris avec ce retard, comme sur un hôte très chargé. Sert à vérifier que
+   les captures n'en dépendent pas (scénario « lent » de run_tests.sh). */
+static long _latencyUs = 0;
+
 static void interruptHandler(int sig) {
     (void)sig;
     int cpu = _cpuId;
     if (cpu < 0)
         return;
+    if (_latencyUs > 0) {
+        /* nanosleep est utilisable dans un gestionnaire de signal */
+        struct timespec ts = {0, _latencyUs * 1000L};
+        nanosleep(&ts, NULL);
+    }
 
     /* V_INT d'abord (niveau 12), puis H_INT (niveau 10), comme le SH2 */
     while (_running) {
@@ -204,8 +244,9 @@ static void runVideo(void) {
 
             if (line < SCREEN_HEIGHT) {
                 vdp_render_line(line, _rgb + (size_t)line * VDP_SCREEN_WIDTH);
-                interface_hblank(0); /* H_INT : voir platform_minifb.c */
-                waitHintServed();
+                /* H_INT (voir platform_minifb.c), routine attendue */
+                const unsigned long before = interface_routines_done();
+                waitRoutinesDone(before, interface_hblank(0));
             } else {
                 interface_hblank(1);
             }
@@ -226,12 +267,18 @@ static void runVideo(void) {
                                 label, is.hintRaised, is.hintHandled[0],
                                 is.hintLate[0], is.hintHandled[1],
                                 is.hintLate[1]);
+                        fprintf(stderr,
+                                "[%s] routines attendues plus d'une ligne "
+                                "%lu, abandonnees %lu\n",
+                                label, _slowServes, _serveTimeouts);
                     }
 
                 _vblankStartNs = start;
                 md_vint(); /* avant l'échange : voir platform_minifb.c */
                 vdp_begin_vblank();
-                interface_raise_vint();
+                /* V_INT : sa routine écrit le SFT de la ligne 0 */
+                const unsigned long before = interface_routines_done();
+                waitRoutinesDone(before, interface_raise_vint());
             }
         }
     }
@@ -277,7 +324,7 @@ static unsigned parseButtons(const char *s) {
 
 static void usage(void) {
     fprintf(stderr,
-            "usage : supervdp_headless [--frames N] "
+            "usage : supervdp_headless [--frames N] [--latency US] "
             "[--shot IMAGE:fichier.ppm]... [--pad DEBUT-FIN:BOUTONS]...\n");
     exit(1);
 }
@@ -291,6 +338,10 @@ static void parseArgs(int argc, char *argv[]) {
 
         if (strcmp(opt, "--frames") == 0) {
             _frameLimit = atol(val);
+        } else if (strcmp(opt, "--latency") == 0) {
+            _latencyUs = atol(val);
+            if (_latencyUs < 0 || _latencyUs > 999999)
+                usage();
         } else if (strcmp(opt, "--shot") == 0 && _shotCount < MAX_SHOTS) {
             char *colon = strchr(val, ':');
             if (colon == NULL)
@@ -339,6 +390,9 @@ int main(int argc, char *argv[]) {
 
     runVideo();
     vdp_print_write_stats("fin");
+    fprintf(stderr,
+            "[fin] routines attendues plus d'une ligne %lu, abandonnees %lu\n",
+            _slowServes, _serveTimeouts);
 
     _running = 0;
     for (int cpu = 0; cpu < PLATFORM_CPU_COUNT; cpu++)
