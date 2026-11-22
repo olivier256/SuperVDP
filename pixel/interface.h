@@ -68,8 +68,10 @@ void interface_write_hcount(uint16_t value);
  */
 
 /* Le VDP signale le début du VBlank. V_INT est mémorisée pour chaque CPU
-   et transmise à ceux qui l'ont démasquée. */
-void interface_raise_vint(void);
+   et transmise à ceux qui l'ont démasquée. Renvoie le nombre de CPU à qui
+   elle a été transmise (routines à attendre, voir
+   interface_routines_done). */
+int interface_raise_vint(void);
 
 /* 1 si une V_INT est en attente et démasquée pour ce CPU */
 int interface_vint_active(int cpu);
@@ -78,14 +80,28 @@ int interface_vint_active(int cpu);
    l'image). Lève H_INT selon le compteur H et HEN.
    Contrôle : une H_INT encore en attente au HBlank suivant n'a pas été
    servie à temps. La valeur écrite par sa routine (SFT, par exemple)
-   arrive alors trop tard pour la ligne voulue : compté dans hintLate. */
-void interface_hblank(int inVBlank);
+   arrive alors trop tard pour la ligne voulue : compté dans hintLate.
+   Renvoie le nombre de CPU à qui une H_INT a été transmise. */
+int interface_hblank(int inVBlank);
 
 /* 1 si une H_INT est en attente et démasquée pour ce CPU */
 int interface_hint_active(int cpu);
 
 /* 1 si une H_INT démasquée attend encore sa routine, sur l'un des CPU */
 int interface_hint_waiting(void);
+
+/* Routines d'interruption TERMINÉES (V_INT et H_INT, tous CPU), comptées
+   par la plate-forme au retour de chaque routine (interface_count_handled,
+   interface_count_hint_handled). Une routine acquitte son interruption
+   AVANT d'écrire ce qu'elle doit écrire (SFT...) : pour savoir que c'est
+   fait, il faut attendre son retour, pas l'acquittement. Le compteur est
+   écrit et lu avec une barrière : ce que la routine a écrit est visible
+   de qui a vu le compteur avancer (ARM compris).
+   Usage par la synchro vidéo :
+     before = interface_routines_done();
+     n = interface_hblank(0);        (ou interface_raise_vint())
+     attendre interface_routines_done() - before >= n */
+unsigned long interface_routines_done(void);
 
 /* Diagnostics */
 typedef struct {

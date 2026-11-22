@@ -110,15 +110,17 @@ static int64_t nowNs(void) {
    machine chargée (ou à 2 cœurs), cela peut prendre plus d'une ligne, et
    deux H_INT se confondraient. Le simulateur imite donc la garantie du
    matériel : après une H_INT, la synchro vidéo attend que sa routine
-   l'ait acquittée, en cédant le processeur, au plus HINT_WAIT_NS. Au-delà,
-   la H_INT reste en attente et sera comptée en retard au HBlank suivant :
-   c'est alors une vraie faute du jeu (interruptions masquées, routine trop
-   longue). */
+   soit terminée (pas seulement acquittée : elle acquitte avant d'écrire
+   SFT), en cédant le processeur, au plus HINT_WAIT_NS. Au-delà, on
+   continue : si la H_INT est encore en attente au HBlank suivant, elle
+   est comptée en retard. La fenêtre garde ainsi le temps réel ; la
+   plate-forme des tests (platform_headless.c), elle, attend toujours. */
 #define HINT_WAIT_NS 50000 /* 50 µs, moins d'une ligne (63,5 µs) */
 
-static void waitHintServed(void) {
+static void waitHintServed(unsigned long before, int count) {
     const int64_t limit = nowNs() + HINT_WAIT_NS;
-    while (interface_hint_waiting() && nowNs() < limit)
+    while (count > 0 && interface_routines_done() - before < (unsigned long)count &&
+           nowNs() < limit)
         sched_yield();
 }
 
@@ -478,8 +480,8 @@ static void beginLine(int line, int64_t startNs) {
         /* Puis le HBlank de cette ligne : H_INT. Sa routine a jusqu'au
            début de la ligne suivante (sur la console, seulement le HBlank,
            plus court) pour écrire ce qui doit valoir pour elle. */
-        interface_hblank(0);
-        waitHintServed();
+        const unsigned long before = interface_routines_done();
+        waitHintServed(before, interface_hblank(0));
     } else {
         interface_hblank(1);
     }

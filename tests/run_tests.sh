@@ -9,6 +9,9 @@
 #    doit être identique, octet pour octet, à l'image de référence
 #    calculée par test_compose pour les défilements attendus.
 #    Le simulateur tourne en temps réel : environ 20 secondes en tout.
+#    Chaque routine d'interruption est attendue jusqu'à son retour
+#    (pixel/platform_headless.c) : le résultat ne dépend pas de la charge
+#    de la machine.
 # =========================================================================
 set -e
 
@@ -22,15 +25,16 @@ cmake --build "$BUILD" --target test_compose supervdp_headless >/dev/null
 echo "== compose_line"
 "$BUILD/test_compose"
 
-# scenario NOM IMAGES MANETTE CAPTURE XA XB
+# scenario NOM IMAGES MANETTE CAPTURE XA XB [OPTIONS]
 #   La manette (DEBUT-FIN:BOUTONS) fait avancer la vue ; la capture est
 #   prise une fois la vue arrêtée. xB = (xA x 352 + 224) / 448.
+#   OPTIONS : passées telles quelles au simulateur (--latency US...).
 scenario() {
-  name=$1 frames=$2 pad=$3 shot=$4 xa=$5 xb=$6
+  name=$1 frames=$2 pad=$3 shot=$4 xa=$5 xb=$6 options=${7:-}
   padopt=""
   for step in $pad; do padopt="$padopt --pad $step"; done
   # shellcheck disable=SC2086
-  "$BUILD/supervdp_headless" --frames "$frames" $padopt \
+  "$BUILD/supervdp_headless" --frames "$frames" $options $padopt \
     --shot "$shot:$OUT/$name.ppm" 2>"$OUT/$name.log"
   "$BUILD/test_compose" --ppm "$xa" "$xb" 0 0 "$OUT/$name.ref.ppm"
   if cmp -s "$OUT/$name.ppm" "$OUT/$name.ref.ppm"; then
@@ -39,8 +43,8 @@ scenario() {
     echo "ECHEC $name : $OUT/$name.ppm differe de $OUT/$name.ref.ppm"
     exit 1
   fi
-  grep -E "acces bus|cycles|\] derniere image :" "$OUT/$name.log" | head -4 |
-    sed 's/^/      /'
+  grep -E "acces bus|cycles|\] derniere image :|\] routines attendues" \
+    "$OUT/$name.log" | head -5 | sed 's/^/      /'
 }
 
 echo "== simulateur complet"
@@ -49,5 +53,9 @@ scenario impair 140 "10-46:R" 100 37 29
 scenario milieu 200 "10-109:R" 180 100 79
 scenario bout 300 "10-209:RC" 280 448 352
 scenario retour 300 "10-209:RC 220-229:L" 280 438 344
+# Hôte très chargé : chaque interruption prise avec 100 µs de retard (plus
+# d'une ligne). Le décalage d'écran varie d'une ligne à l'autre ici (xA
+# pair, xB impair) : sans attente des routines, l'image serait fausse.
+scenario lent 130 "10-109:R" 120 100 79 "--latency 100"
 
 echo "Tous les tests sont passes."

@@ -710,3 +710,78 @@ ratés pouvait devenir négatif).
 Par CPU et par image, hors écritures FB, avec l'assembleur : 248 000
 cycles en moyenne, 277 000 au pire (259 000 et 290 000 avant).
 ```
+
+---
+
+Captures des tests indépendantes de la charge de la machine
+
+Les scénarios du simulateur complet (`tests/run_tests.sh`) échouaient
+parfois au hasard : une image capturée différait de la référence, puis
+le même test repassait. Cause : le simulateur tourne en temps réel, et
+la synchro vidéo n'attendait la routine H_INT du Master que 50 µs. Sur
+une machine chargée, le thread du Master obtenait un cœur trop tard ;
+la ligne suivante s'affichait alors avec l'ancien décalage d'écran
+(SFT). Deux défauts aggravaient le problème : l'attente s'arrêtait à
+l'acquittement, alors que la routine acquitte AVANT d'écrire SFT ; et
+la V_INT, qui écrit le SFT de la ligne 0, n'était pas attendue du tout.
+
+**Ce que fait cette version** :
+- `pixel/interface` :
+  - `interface_routines_done()` : compteur des routines d'interruption
+    TERMINÉES (V_INT et H_INT), incrémenté au retour de chaque routine
+    avec une barrière (release / acquire), pour que ce que la routine a
+    écrit soit visible de qui voit le compteur avancer, ARM compris ;
+  - `interface_hblank()` et `interface_raise_vint()` renvoient le nombre
+    de CPU à qui l'interruption a été transmise (routines à attendre).
+- `pixel/platform_headless.c` (plate-forme des tests) : après chaque
+  H_INT et chaque V_INT, la synchro vidéo attend que les routines
+  lancées soient terminées, sans limite de temps pratique (garde-fou :
+  1 s, compté comme « abandonnée »). Le balayage prend du retard sur
+  l'horloge et le rattrape ensuite ; l'image ne dépend plus que de
+  l'ordre des événements. Compteurs affichés à chaque capture : routines
+  attendues plus d'une ligne, attentes abandonnées.
+- Option `--latency US` : chaque interruption est prise avec US
+  microsecondes de retard, comme sur un hôte très chargé.
+- `pixel/platform_minifb.c` (fenêtre) : garde le temps réel (attente de
+  50 µs au plus), mais attend la fin de la routine et non plus son
+  acquittement.
+- `tests/run_tests.sh` : nouveau scénario « lent » (celui de « milieu »,
+  où le décalage varie d'une ligne à l'autre, avec `--latency 100`) ; le
+  compteur des routines attendues est recopié sous chaque scénario.
+- Vérifié : tous les tests passent (environ 26 s au lieu de 23) ; aucune
+  H_INT en retard dans les scénarios ; statistiques d'écritures et de
+  cycles inchangées.
+
+**Mesures** (scénario « milieu », image 180, comparée à la référence) :
+
+| Latence imposée | Avant                        | Après                 |
+|-----------------|------------------------------|-----------------------|
+| aucune          | juste (échec rare au hasard) | juste                 |
+| 30 µs           | fausse : 20 860 octets       | juste                 |
+| 100 µs          | fausse : 40 937 octets       | juste (9 s au lieu de 3) |
+
+Sans latence imposée, sur 2 cœurs, les scénarios comptent de 90 à 400
+routines servies en plus d'une ligne : autant d'occasions où l'ancienne
+attente pouvait fausser l'image.
+
+**Ce qui reste pour plus tard** :
+- la fenêtre peut toujours montrer une ligne mal décalée quand la
+  machine est très chargée : c'est voulu (temps réel), et compté dans
+  « en retard ».
+
+Message de commit proposé :
+
+```
+Captures des tests indépendantes de la charge de la machine
+
+platform_headless : après chaque H_INT et V_INT, la synchro vidéo
+attend que les routines soient terminées (interface_routines_done,
+avec barrière), et non plus 50 µs au plus jusqu'à l'acquittement. Une
+H_INT servie trop tard ne fausse plus le décalage d'écran de la ligne
+suivante, ni la V_INT celui de la ligne 0.
+
+Option --latency US (hôte très chargé) et scénario « lent » dans
+run_tests.sh : image juste avec 100 µs de retard par interruption
+(fausse avant : 40 937 octets différents). La fenêtre garde le temps
+réel, mais attend la fin de la routine plutôt que son acquittement.
+```

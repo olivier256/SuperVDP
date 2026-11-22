@@ -22,6 +22,7 @@ static volatile unsigned long _hintHandled[PLATFORM_CPU_COUNT];
 static volatile unsigned long _hintLate[PLATFORM_CPU_COUNT];
 
 static volatile unsigned long _raised = 0;
+static unsigned long _routinesDone = 0; /* accès atomiques seulement */
 static volatile unsigned long _handled[PLATFORM_CPU_COUNT];
 static volatile unsigned long _unacked[PLATFORM_CPU_COUNT];
 
@@ -54,16 +55,20 @@ void interface_clear_vint(void) {
     platform_sync();
 }
 
-void interface_raise_vint(void) {
+int interface_raise_vint(void) {
     _raised++;
 
+    int sent = 0;
     for (int cpu = 0; cpu < PLATFORM_CPU_COUNT; cpu++) {
         _vintPending[cpu] = 1;
         platform_sync();
 
-        if (_intMask[cpu] & INTMASK_V)
+        if (_intMask[cpu] & INTMASK_V) {
             platform_raise_interrupt(cpu);
+            sent++;
+        }
     }
+    return sent;
 }
 
 int interface_vint_active(int cpu) {
@@ -92,18 +97,19 @@ int interface_hint_active(int cpu) {
     return _hintPending[cpu] && (_intMask[cpu] & INTMASK_H);
 }
 
-void interface_hblank(int inVBlank) {
+int interface_hblank(int inVBlank) {
     if (inVBlank && !_hen) {
         _hcounter = 0; /* le décompte repart avec la première ligne */
-        return;
+        return 0;
     }
     if (_hcounter > 0) {
         _hcounter--;
-        return;
+        return 0;
     }
     _hcounter = _hcount;
     _hintRaised++;
 
+    int sent = 0;
     for (int cpu = 0; cpu < PLATFORM_CPU_COUNT; cpu++) {
         if (!(_intMask[cpu] & INTMASK_H))
             continue;
@@ -112,10 +118,19 @@ void interface_hblank(int inVBlank) {
         _hintPending[cpu] = 1;
         platform_sync();
         platform_raise_interrupt(cpu);
+        sent++;
     }
+    return sent;
 }
 
-void interface_count_hint_handled(int cpu) { _hintHandled[cpu]++; }
+void interface_count_hint_handled(int cpu) {
+    _hintHandled[cpu]++;
+    __atomic_fetch_add(&_routinesDone, 1, __ATOMIC_RELEASE);
+}
+
+unsigned long interface_routines_done(void) {
+    return __atomic_load_n(&_routinesDone, __ATOMIC_ACQUIRE);
+}
 
 int interface_hint_waiting(void) {
     for (int cpu = 0; cpu < PLATFORM_CPU_COUNT; cpu++)
@@ -128,6 +143,7 @@ void interface_count_handled(int cpu, int acknowledged) {
     _handled[cpu]++;
     if (!acknowledged)
         _unacked[cpu]++;
+    __atomic_fetch_add(&_routinesDone, 1, __ATOMIC_RELEASE);
 }
 
 void interface_get_stats(interface_stats *stats) {
