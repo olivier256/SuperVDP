@@ -1,0 +1,6 @@
+https://github.com/lordmir/landstalker_engine
+https://github.com/lordmir/landstalker_disasm
+https://github.com/lordmir/landstalker_editor
+
+> Landstalker, avec l’habituel Kan NAITO à la production, se vante d’être un jeu d’un genre nouveau, utilisant une technologie encore jamais vue : le DDS 520 (Diamond shaped Dimension System).
+[](https://www.journaldujapon.com/2023/10/27/gaming-memories-57-landstalker/)
