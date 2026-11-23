@@ -917,3 +917,53 @@ une référence naïve (5 294 écrans), sept scénarios du simulateur.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01R9arX1zZAdGWJYMVTHjA5x
 ```
+
+---
+
+Rangée 15 des triangles, tests sous AddressSanitizer
+
+**Ce que fait cette version** :
+- **Correction** : le rendu d'une ligne lit, dans chaque colonne, la
+  rangée r du triangle (c, t) et la rangée r + 8 du triangle (c, t - 1).
+  Pour r = 7, c'est la rangée 15, vide, que le convertisseur ne rangeait
+  pas : la boucle lisait 16 octets après la fin du tableau des
+  triangles. Sous Linux, ces octets valaient 0 par hasard et tous les
+  tests passaient ; sur Mac, ce sont d'autres données : des pixels faux
+  sur la ligne 7 de chaque rangée de triangles, à gauche de la zone
+  (`test_render` : 146 976 échecs). Les triangles ont maintenant 16
+  rangées (`ZONE_TRIANGLE_ROWS`), la dernière pleine de 0 ; la boucle
+  garde zéro cas à part. 4 % de données en plus (38 triangles de la
+  démo, fond compris : 9 728 octets au lieu de 9 120).
+- **Tests sous AddressSanitizer et UBSan** : `test_visibility` et
+  `test_render` sont compilés avec `-fsanitize=address,undefined`, avec
+  leur propre exemplaire du rendu et des données de la démo
+  (`demo_content_checked`). Une lecture hors d'un tableau échoue
+  maintenant partout. Vérifié : avec 15 rangées, `test_render` s'arrête
+  sur « global-buffer-overflow » dans `render_line`.
+  `-DDDS32_SANITIZE=OFF` pour s'en passer.
+- `make run` et `make stats` : sans MiniFB, un message rappelle
+  `git submodule update --init` au lieu de « No such file or directory ».
+
+**Mesures** : inchangées (banc sh2cycles, caméra qui suit la caisse :
+212 000 à 247 000 cycles par CPU, 78,6 à 88,1 % du budget avec les
+écritures ; modèle à -5,3 % / +6,1 %).
+
+Message de commit proposé :
+
+```
+Rangée 15 des triangles, tests sous AddressSanitizer
+
+render_line lit la rangée r + 8 du second triangle de chaque colonne,
+soit la rangée 15 (vide) pour r = 7 : dds32conv ne la rangeait pas, la
+boucle lisait après la fin du tableau des triangles. Invisible sous
+Linux (octets nuls par hasard), faux sur Mac. Les triangles ont
+maintenant 16 rangées, la dernière à 0.
+
+test_visibility et test_render sont compilés avec AddressSanitizer et
+UBSan (option DDS32_SANITIZE) : l'ancien bogue y est détecté.
+
+make run / make stats : message clair si MiniFB n'est pas installé.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01R9arX1zZAdGWJYMVTHjA5x
+```

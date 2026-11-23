@@ -25,6 +25,11 @@ cmake -S . -B "$BUILD" >/dev/null
 cmake --build "$BUILD" --target test_visibility test_render dds32_headless \
   >/dev/null
 
+# Tests compilés avec AddressSanitizer et UBSan (voir CMakeLists.txt) ;
+# les outils de conversion ne libèrent pas leur mémoire en sortant : pas
+# de recherche de fuites.
+export ASAN_OPTIONS=${ASAN_OPTIONS:-detect_leaks=0}
+
 echo "== test_visibility"
 "$BUILD/test_visibility"
 echo "== test_render"

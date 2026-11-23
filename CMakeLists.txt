@@ -103,13 +103,31 @@ target_compile_options(dds32_headless PRIVATE -Wall -Wextra)
 target_link_libraries(dds32_headless PRIVATE demo_content Threads::Threads)
 
 # ---- Tests -----------------------------------------------------------------
+# Les tests sont compilés avec AddressSanitizer et UBSan (avec leur propre
+# exemplaire du rendu et des données) : une lecture hors d'un tableau doit
+# échouer sur toutes les machines, pas seulement là où les octets voisins
+# ne valent pas 0 par hasard. -DDDS32_SANITIZE=OFF pour s'en passer.
 
-add_executable(test_visibility tests/test_visibility.c dds32/visibility.c)
-target_include_directories(test_visibility PRIVATE ${DDS32_INCLUDES})
-target_compile_options(test_visibility PRIVATE -Wall -Wextra)
-target_link_libraries(test_visibility PRIVATE demo_content)
+option(DDS32_SANITIZE "Tests avec AddressSanitizer et UBSan" ON)
+set(SANITIZE_FLAGS "")
+if(DDS32_SANITIZE)
+	set(SANITIZE_FLAGS -fsanitize=address,undefined -fno-sanitize-recover=undefined
+		-fno-omit-frame-pointer)
+endif()
 
-add_executable(test_render tests/test_render.c)
-target_include_directories(test_render PRIVATE ${DDS32_INCLUDES})
-target_compile_options(test_render PRIVATE -Wall -Wextra)
-target_link_libraries(test_render PRIVATE demo_content)
+add_library(demo_content_checked STATIC ${GENERATED}/demo_assets.c
+	${GENERATED}/zone_demo.c demo/demo.c dds32/render.c dds32/sprite.c)
+target_include_directories(demo_content_checked PUBLIC ${DDS32_INCLUDES})
+target_compile_options(demo_content_checked PRIVATE -Wall -Wextra ${SANITIZE_FLAGS})
+
+foreach(test test_visibility test_render)
+	set(extra "")
+	if(test STREQUAL test_visibility)
+		set(extra dds32/visibility.c)
+	endif()
+	add_executable(${test} tests/${test}.c ${extra})
+	target_include_directories(${test} PRIVATE ${DDS32_INCLUDES})
+	target_compile_options(${test} PRIVATE -Wall -Wextra ${SANITIZE_FLAGS})
+	target_link_options(${test} PRIVATE ${SANITIZE_FLAGS})
+	target_link_libraries(${test} PRIVATE demo_content_checked)
+endforeach()

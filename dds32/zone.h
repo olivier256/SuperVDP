@@ -25,7 +25,7 @@
      + k, pour savoir si un objet mobile passe devant ou derrière ; 0 pour
      le fond (jamais devant) ;
    - triangles : les triangles de pixels, sans doublon, rangés RANGÉE PAR
-     RANGÉE : la rangée r (0 à 14) du triangle n (0 à triangleCount - 1)
+     RANGÉE : la rangée r (0 à 15) du triangle n (0 à triangleCount - 1)
      occupe les 16 octets zone_triangle_row(z, n, r), chaque pixel à sa
      place dans la colonne de 16 pixels, et des 0 ailleurs. Dans une
      colonne, une ligne de la zone est partagée entre deux triangles dont
@@ -53,7 +53,10 @@ typedef struct {
     const uint8_t *triangles; /* 15 x triangleCount x 16 octets */
 } Zone;
 
-#define ZONE_TRIANGLE_ROWS 15 /* la rangée 15 est vide */
+/* 16 rangées par triangle : la rangée 15 est vide (largeur 0), mais elle
+   est lue (avec la rangée 7 de l'autre triangle de la colonne) : elle est
+   rangée, pleine de 0, pour que la boucle n'ait aucun cas à part. */
+#define ZONE_TRIANGLE_ROWS 16
 #define ZONE_BACKGROUND 1     /* index de palette du fond (triangle 0) */
 
 #define ZONE_FIRST_TRIANGLE 2 /* après les deux triangles du fond */

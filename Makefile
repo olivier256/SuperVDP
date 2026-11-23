@@ -10,12 +10,14 @@ clean:
 
 rebuild: clean all
 
-# La démo, dans une fenêtre
+# La démo, dans une fenêtre (il faut MiniFB : voir README.md)
 run: all
+	@test -x build/dds32 || { echo "Pas de fenetre : MiniFB absent. Une fois : git submodule update --init"; exit 1; }
 	./build/dds32
 
 # La même, avec les compteurs (toutes les 5 secondes, sur le terminal)
 stats: all
+	@test -x build/dds32 || { echo "Pas de fenetre : MiniFB absent. Une fois : git submodule update --init"; exit 1; }
 	VDP_STATS=1 ./build/dds32
 
 # Sans fenêtre : 5 secondes, capture de la dernière image

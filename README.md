@@ -31,7 +31,9 @@ La compilation convertit la zone de démo et produit son aperçu,
 `build/apercu_demo.bmp` : l'image entière de la zone, telle que la
 console l'affiche.
 
-À la création du dépôt, MiniFB s'ajoute une fois pour toutes par
+Après le clonage, MiniFB s'installe une fois par `git submodule update
+--init` : sans lui, `make run` le rappelle et s'arrête. À la création du
+dépôt, MiniFB s'ajoute une fois pour toutes par
 `git submodule add https://github.com/emoon/minifb.git minifb`.
 Sans MiniFB, seules les cibles sans fenêtre sont construites
 (`dds32_headless`, les tests). Sous Linux, MiniFB demande les en-têtes
@@ -105,7 +107,9 @@ environ 384 000 cycles SH2 par image et par CPU.
 
 ## Vérifier
 
-`tests/run_tests.sh` (ou `make test`) :
+`tests/run_tests.sh` (ou `make test`). Les deux premiers tests sont
+compilés avec AddressSanitizer et UBSan : une lecture hors d'un tableau
+échoue sur toutes les machines (`-DDDS32_SANITIZE=OFF` pour s'en passer).
 1. `test_visibility` : la mosaïque contre un lancer de rayons, sur la zone
    de démo et 300 zones au hasard (ponts et surplombs en quantité).
 2. `test_render` : le rendu des lignes contre un rendu de référence naïf
