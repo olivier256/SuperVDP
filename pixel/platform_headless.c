@@ -24,12 +24,12 @@
    dans le frame buffer sont affichés à chaque capture et à la fin.
 
    Usage :
-     supervdp_headless [--frames N] [--latency US]
+     dds32_headless [--frames N] [--latency US]
                     [--shot IMAGE:fichier.ppm]... [--pad DEBUT-FIN:BOUTONS]...
    --latency : chaque interruption est prise avec US microsecondes de
    retard (hôte très chargé, pour les tests).
    Boutons : U D L R (croix), A B C, S (Start). Exemple :
-     supervdp_headless --frames 120 --pad 10-60:R --shot 119:fin.ppm
+     dds32_headless --frames 120 --pad 10-60:R --shot 119:fin.ppm
    ========================================================================= */
 
 #define SCREEN_HEIGHT 224
@@ -324,7 +324,7 @@ static unsigned parseButtons(const char *s) {
 
 static void usage(void) {
     fprintf(stderr,
-            "usage : supervdp_headless [--frames N] [--latency US] "
+            "usage : dds32_headless [--frames N] [--latency US] "
             "[--shot IMAGE:fichier.ppm]... [--pad DEBUT-FIN:BOUTONS]...\n");
     exit(1);
 }

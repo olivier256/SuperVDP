@@ -12,15 +12,15 @@ rebuild: clean all
 
 # La démo, dans une fenêtre
 run: all
-	./build/supervdp
+	./build/dds32
 
 # La même, avec les compteurs (toutes les 5 secondes, sur le terminal)
 stats: all
-	VDP_STATS=1 ./build/supervdp
+	VDP_STATS=1 ./build/dds32
 
 # Sans fenêtre : 5 secondes, capture de la dernière image
 headless: all
-	./build/supervdp_headless --frames 300 --pad 10-200:R --shot 299:build/capture.ppm
+	./build/dds32_headless --frames 300 --pad 10-110:R --pad 120-200:D --shot 299:build/capture.ppm
 
 # Tous les tests (environ 25 secondes)
 test:

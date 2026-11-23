@@ -1,8 +1,6 @@
-# Images converties par tools/bmp2c (voir l'en-tête de bmp2c.c).
-# type    nom         fichier
-# La palette est celle de la première image.
-# Les BMP sont produits depuis source/chunli_stage.png par
-# tools/chunli2bmp.py (index 0 = transparent).
+# Sprites convertis par tools/bmp2c (voir l'en-tête de bmp2c.c).
+# type    nom     fichier
+# La palette est celle de la première image : celle de tous les cubes,
+# dessinés par tools/cubes2bmp.py (index 0 = transparent).
 
-plane     plane_a     plane_a.bmp
-plane     plane_b     plane_b.bmp
+sprite    crate   crate.bmp

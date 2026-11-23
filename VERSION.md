@@ -785,3 +785,135 @@ run_tests.sh : image juste avec 100 µs de retard par interruption
 (fausse avant : 40 937 octets différents). La fenêtre garde le temps
 réel, mais attend la fin de la routine plutôt que son acquittement.
 ```
+
+---
+
+DDS 32 : preuve de concept, un monde de voxels en mosaïque de triangles
+
+**Ce que fait cette version** :
+- Nouveau dépôt **DDS 32**, cloné depuis SuperVDP (commit 032a22f), dont
+  on ne garde que l'architecture proche de la 32X : le simulateur
+  `pixel/`, les boucles Master / Slave, l'échange de frame buffer, le
+  décalage d'écran SFT, les tests et le banc `tools/sh2cycles`. Le moteur
+  de tiles et le décor de Chun-Li sont retirés ; les sections précédentes
+  de ce fichier sont l'histoire de SuperVDP. La fiche du projet est dans
+  `ARCHITECTURE.md`.
+- **Un monde de voxels**, édité dans MagicaVoxel : `demo/zone/demo.vox`,
+  24 × 20 cases, 8 niveaux, 1 097 voxels (rivière, pont avec du vide
+  dessous, arche, plateau, marche, murs, caisses), écrit par
+  `tools/demozone.py`. Chaque numéro de couleur est un type de cube ;
+  `demo/zone/cubes.txt` donne ses trois faces, prises dans des images de
+  cube 32 × 32 (`tools/cubes2bmp.py`).
+- **Le convertisseur** `tools/dds32conv.c`, notre « Mirage Type III » :
+  découpe les faces en triangles de 16 × 16 (`dds32/iso.h` : 128 pixels,
+  bords sur des abscisses paires), sans doublon ; calcule pour chaque
+  triangle de l'image de la zone la face visible et sa profondeur
+  (`dds32/visibility.c`, C portable : les voxels de l'arrière vers
+  l'avant, faces cachées par un voisin sautées) ; écrit le tout en C
+  (`dds32/zone.h`) et un aperçu BMP de la zone entière
+  (`build/apercu_demo.bmp`). Zone de démo : image de 720 × 480, 2 700
+  triangles dont 1 293 visibles, 36 triangles de pixels différents.
+- **Le rendu** (`dds32/render.c`) : l'écran entier est redessiné à chaque
+  image, ligne par ligne (Master : lignes paires, Slave : impaires).
+  Dans chaque colonne de 16 pixels, une ligne de la zone est partagée
+  entre deux triangles aux parts complémentaires ; leurs rangées sont
+  rangées sur 16 octets, pixels à leur place et des 0 ailleurs : la
+  colonne est le OU des deux rangées. Le fond est un triangle comme les
+  autres (deux, un par sens), et la mosaïque a une rangée de plus
+  au-dessus de la zone : aucun test dans la boucle. Les colonnes coupées
+  par l'écran passent par un chemin général.
+- **La caisse** (objet mobile) : sa tranche par la zone overwrite, puis
+  par-dessus, par la zone overwrite aussi, les rangées des triangles du
+  décor qui sont devant elle (profondeur u + v + w, puis w). Le pilier,
+  le linteau de l'arche, le bord du plateau la cachent au triangle près.
+- **Le jeu** (`demo/md68k.c`, `demo/demo.c`, côté 68000) : la caisse se
+  pose sur le plus haut voxel sous elle, monte d'un niveau à la fois, ne
+  marche pas sur l'eau, passe sous l'arche ; la caméra la suit sans
+  sortir de la zone. Caisse et caméra dans les registres COMM 3 à 7.
+  Caméra à une abscisse impaire : dessin depuis l'abscisse paire d'avant,
+  affichage décalé d'un pixel (SFT, écrit par le Master en V_INT d'après
+  le frame buffer affiché ; lignes de 322 octets).
+- `tools/bmp2c` ne convertit plus que des sprites ; son lecteur BMP est
+  partagé avec dds32conv (`tools/bmpread.c`).
+- **Tests** (`make test`, environ 25 s) :
+  - `test_visibility` : la mosaïque contre un lancer de rayons (méthode
+    des dalles), sur la zone de démo et 300 zones au hasard : 81 273
+    triangles, 0 échec. Le test attrape une inversion des faces gauche et
+    droite (5 131 échecs) et un ordre de dessin inversé (19 235) ;
+  - `test_render` : le rendu contre une référence naïve (zone posée
+    triangle par triangle, caisse pixel par pixel), sur 5 294 écrans
+    (caméra partout, caisse promenée, caisse au hasard), et chaque
+    écriture (16 bits, paire, dans la ligne, jamais un mot nul par la zone
+    overwrite, chaque mot du décor écrit) ;
+  - sept scénarios du simulateur complet, comparés octet pour octet à la
+    référence : départ, droite, rapide (caméra à une abscisse impaire),
+    pont, arche, plateau, interruptions servies avec 100 µs de retard.
+- **Banc** `tools/sh2cycles` refait pour `render_line` :
+  `bench_render.c`, `costs_render.c`, `fit_render.py`, 240 images ; le
+  code SH2 dessine exactement comme l'hôte. Modèle de coûts
+  (`dds32/cost.h`) étalonné : écart de −4,7 % à +6,0 %.
+
+**Mesures** (banc sh2cycles, par CPU, budget 384 000 cycles) :
+
+Trois versions de la boucle de rendu, mesurées l'une après l'autre :
+
+| version de `render.c`                                 | cycles par CPU (moyenne) | défauts de cache |
+|-------------------------------------------------------|-------------------------:|-----------------:|
+| triangles rangés triangle par triangle, un appel par morceau de ligne | 879 000 | 11 000 |
+| triangles rangés rangée par rangée (16 octets)        | 430 000 | 3 600 |
+| colonne = OU de deux rangées, fond = un triangle      | **236 000** | 2 000 |
+
+Version retenue, caméra qui suit la caisse (le cas du jeu) :
+- **214 000 à 245 000 cycles** par CPU hors écritures, plus 18 000 à
+  18 500 écritures par CPU (3 à 5 cycles) : **78 à 88 % du budget**. On
+  tient 60 images/s en redessinant tout l'écran à chaque image ; il reste
+  12 à 22 % par CPU pour d'autres objets.
+- Bus du VDP : 36 500 écritures par image pour les deux CPU, 47,5 % du
+  plafond.
+- Coûts mesurés : une colonne entière (16 pixels) 80 cycles, une colonne
+  coupée par le bord de l'écran 217, une tranche de la caisse 318, un
+  triangle examiné sur les lignes de la caisse 136, un triangle redessiné
+  devant elle 89.
+- Caméra en partie hors de la zone (images tirées au hasard du banc,
+  impossibles en jeu) : jusqu'à 400 000 cycles, par le chemin général.
+
+**Ce qui reste pour plus tard** (voir ARCHITECTURE.md) :
+- plusieurs objets mobiles, triés ; l'ordre exact d'un objet entre deux
+  cases (aujourd'hui : u + v + w, puis w, comme Landstalker) ;
+- les triangles copiés en SDRAM à l'entrée d'une zone ; la palette
+  partagée (192 couleurs pour le décor, 64 pour les personnages) ; les
+  faces prises dans de grands dessins ;
+- plusieurs zones et leurs transitions ; le décor qui change en jeu
+  (visibilité recalculée par les SH2 sur une petite région) ;
+- si le budget manque : assembleur SH2 pour la boucle des colonnes,
+  défilement par la table de lignes, DMA.
+
+Message de commit proposé :
+
+```
+DDS 32 : preuve de concept, un monde de voxels en mosaïque de triangles
+
+Nouveau dépôt DDS 32, cloné depuis SuperVDP (032a22f) : on garde le
+simulateur pixel, les boucles Master / Slave, les tests et le banc
+sh2cycles ; le moteur de tiles et le décor de Chun-Li sont retirés.
+Fiche du projet : ARCHITECTURE.md.
+
+Monde de voxels édité dans MagicaVoxel (zone de démo : rivière, pont,
+arche, plateau). Le convertisseur dds32conv calcule sur Mac la face
+visible de chaque triangle 16 x 16 de l'image (visibility.c) et produit
+la mosaïque, les profondeurs, les triangles de pixels et un aperçu.
+
+Rendu : l'écran entier à chaque image, chaque colonne de 16 pixels comme
+le OU de deux rangées de triangles. La caisse passe derrière le décor au
+triangle près. Le 68000 conduit la caisse et la caméra (COMM 3 à 7).
+
+Mesuré par le banc sh2cycles : 214 000 à 245 000 cycles par CPU, 78 à
+88 % du budget avec les écritures ; 60 images/s. Modèle étalonné
+(-4,7 % / +6,0 %).
+
+Tests : visibilité contre un lancer de rayons (301 zones), rendu contre
+une référence naïve (5 294 écrans), sept scénarios du simulateur.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01R9arX1zZAdGWJYMVTHjA5x
+```

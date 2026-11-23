@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(SuperVDP C)
+project(DDS32 C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -12,7 +12,7 @@ endif()
 find_package(Threads REQUIRED)
 
 # ---- Simulateur 32X « pixel » ----------------------------------------------
-# VDP, interface (COMM, V_INT) et plates-formes : sans rapport avec SuperVDP.
+# VDP, interface (COMM, V_INT) et plates-formes, repris de SuperVDP.
 
 set(PIXEL_SOURCES pixel/vdp.c pixel/interface.c)
 
@@ -32,64 +32,84 @@ else()
 	message(STATUS "MiniFB absent (git submodule update --init) : pas de fenetre")
 endif()
 
-# ---- Outil : BMP 8 bits -> données C ---------------------------------------
+# ---- Outils ---------------------------------------------------------------
+# bmp2c : sprites BMP 8 bits -> C. dds32conv : zone MagicaVoxel -> C.
 
-add_executable(bmp2c tools/bmp2c.c)
-target_include_directories(bmp2c PRIVATE supervdp)
+add_executable(bmp2c tools/bmp2c.c tools/bmpread.c)
+target_include_directories(bmp2c PRIVATE dds32 tools)
 target_compile_options(bmp2c PRIVATE -Wall -Wextra)
 
-# ---- Images de la démo -----------------------------------------------------
-# Converties à chaque modification du manifeste ou d'un BMP.
+add_executable(dds32conv tools/dds32conv.c tools/bmpread.c dds32/visibility.c)
+target_include_directories(dds32conv PRIVATE dds32 tools)
+target_compile_options(dds32conv PRIVATE -Wall -Wextra)
 
+# ---- Données de la démo ----------------------------------------------------
+# Converties à chaque modification d'une image, de la zone ou des cubes.
+
+set(GENERATED ${CMAKE_CURRENT_BINARY_DIR}/generated)
 set(DEMO_MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/demo/assets/assets.txt)
 file(GLOB DEMO_BMP CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/demo/assets/*.bmp)
-set(DEMO_GENERATED ${CMAKE_CURRENT_BINARY_DIR}/generated/demo_assets)
+set(DEMO_VOX ${CMAKE_CURRENT_SOURCE_DIR}/demo/zone/demo.vox)
+set(DEMO_CUBES ${CMAKE_CURRENT_SOURCE_DIR}/demo/zone/cubes.txt)
 
 add_custom_command(
-	OUTPUT ${DEMO_GENERATED}.c ${DEMO_GENERATED}.h
-	COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/generated
-	COMMAND bmp2c ${DEMO_MANIFEST} ${DEMO_GENERATED}
+	OUTPUT ${GENERATED}/demo_assets.c ${GENERATED}/demo_assets.h
+	COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED}
+	COMMAND bmp2c ${DEMO_MANIFEST} ${GENERATED}/demo_assets
 	DEPENDS bmp2c ${DEMO_MANIFEST} ${DEMO_BMP}
-	COMMENT "Conversion des images de la demo"
+	COMMENT "Conversion des sprites de la demo"
+)
+add_custom_command(
+	OUTPUT ${GENERATED}/zone_demo.c ${GENERATED}/zone_demo.h
+	       ${CMAKE_CURRENT_BINARY_DIR}/apercu_demo.bmp
+	COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED}
+	COMMAND dds32conv ${DEMO_VOX} ${DEMO_CUBES}
+	        ${CMAKE_CURRENT_SOURCE_DIR}/demo/assets demo ${GENERATED}/zone_demo
+	        ${CMAKE_CURRENT_BINARY_DIR}/apercu_demo.bmp
+	DEPENDS dds32conv ${DEMO_VOX} ${DEMO_CUBES} ${DEMO_BMP}
+	COMMENT "Conversion de la zone de la demo (apercu : build/apercu_demo.bmp)"
 )
 
-# Données de la démo, partagées par les exécutables
-add_library(demo_assets STATIC ${DEMO_GENERATED}.c)
-target_include_directories(demo_assets PUBLIC supervdp ${CMAKE_CURRENT_BINARY_DIR}/generated)
+# Contenu de la démo (sprites, zone, jeu) et dessin, partagés par les
+# exécutables et les tests
+set(DDS32_INCLUDES pixel dds32 demo ${GENERATED})
+add_library(demo_content STATIC ${GENERATED}/demo_assets.c
+	${GENERATED}/zone_demo.c demo/demo.c dds32/render.c dds32/sprite.c)
+target_include_directories(demo_content PUBLIC ${DDS32_INCLUDES})
+target_compile_options(demo_content PRIVATE -Wall -Wextra)
 
-# ---- SuperVDP + démo -------------------------------------------------------
+# ---- DDS 32 : moteur + démo ------------------------------------------------
 
-set(SUPERVDP_SOURCES
-	supervdp/supervdp.c
-	supervdp/compose.c
-	supervdp/framebuffer.c
-	demo/content.c
+set(DDS32_SOURCES
+	dds32/engine.c
+	dds32/framebuffer.c
 	demo/md68k.c
 	${PIXEL_SOURCES}
 )
-set(SUPERVDP_INCLUDES pixel supervdp ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
 # Avec fenêtre
 if(HAVE_MINIFB)
-	add_executable(supervdp ${SUPERVDP_SOURCES} pixel/platform_minifb.c)
-	target_include_directories(supervdp PRIVATE ${SUPERVDP_INCLUDES})
-	target_compile_options(supervdp PRIVATE -Wall -Wextra)
-	target_link_libraries(supervdp PRIVATE demo_assets minifb Threads::Threads)
-	set_target_properties(supervdp PROPERTIES LINKER_LANGUAGE CXX)
+	add_executable(dds32 ${DDS32_SOURCES} pixel/platform_minifb.c)
+	target_include_directories(dds32 PRIVATE ${DDS32_INCLUDES})
+	target_compile_options(dds32 PRIVATE -Wall -Wextra)
+	target_link_libraries(dds32 PRIVATE demo_content minifb Threads::Threads)
+	set_target_properties(dds32 PROPERTIES LINKER_LANGUAGE CXX)
 endif()
 
 # Sans fenêtre : tests et captures (voir pixel/platform_headless.c)
-add_executable(supervdp_headless ${SUPERVDP_SOURCES} pixel/platform_headless.c)
-target_include_directories(supervdp_headless PRIVATE ${SUPERVDP_INCLUDES})
-target_compile_options(supervdp_headless PRIVATE -Wall -Wextra)
-target_link_libraries(supervdp_headless PRIVATE demo_assets Threads::Threads)
+add_executable(dds32_headless ${DDS32_SOURCES} pixel/platform_headless.c)
+target_include_directories(dds32_headless PRIVATE ${DDS32_INCLUDES})
+target_compile_options(dds32_headless PRIVATE -Wall -Wextra)
+target_link_libraries(dds32_headless PRIVATE demo_content Threads::Threads)
 
 # ---- Tests -----------------------------------------------------------------
 
-add_executable(test_compose tests/test_compose.c supervdp/compose.c)
-target_include_directories(test_compose PRIVATE ${SUPERVDP_INCLUDES})
-target_compile_options(test_compose PRIVATE -Wall -Wextra)
-target_link_libraries(test_compose PRIVATE demo_assets)
+add_executable(test_visibility tests/test_visibility.c dds32/visibility.c)
+target_include_directories(test_visibility PRIVATE ${DDS32_INCLUDES})
+target_compile_options(test_visibility PRIVATE -Wall -Wextra)
+target_link_libraries(test_visibility PRIVATE demo_content)
 
-enable_testing()
-add_test(NAME compose COMMAND test_compose)
+add_executable(test_render tests/test_render.c)
+target_include_directories(test_render PRIVATE ${DDS32_INCLUDES})
+target_compile_options(test_render PRIVATE -Wall -Wextra)
+target_link_libraries(test_render PRIVATE demo_content)

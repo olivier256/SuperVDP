@@ -4,5 +4,5 @@
 # macOS
 .DS_Store
 
-# Réglages VS Code locaux (les réglages partagés sont dans SuperVDP.code-workspace)
+# Réglages VS Code locaux (les réglages partagés sont dans DDS32.code-workspace)
 /.vscode/

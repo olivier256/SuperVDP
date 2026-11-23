@@ -9,7 +9,7 @@
 # =========================================================================
 set -e
 
-IMAGE=supervdp-sh2cycles
+IMAGE=dds32-sh2cycles
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     echo "Construction de l'image $IMAGE (une seule fois, environ 40 minutes)..."

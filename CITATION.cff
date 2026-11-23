@@ -1,11 +1,11 @@
 cff-version: 1.2.0
-title: "SuperVDP"
-message: "If you use SuperVDP in your research or software project, please cite it as follows."
+title: "DDS 32"
+message: "If you use DDS 32 in your research or software project, please cite it as follows."
 type: software
 authors:
   - family-names: "BROSSERON"
     given-names: "Olivier"
-repository-code: "https://github.com/olivier256/SuperVDP"
+repository-code: "https://github.com/olivier256/DDS32"
 license: "MIT"
-version: "1.0.0"
-date-released: "2026-08-21"
+version: "0.1.0"
+date-released: "2026-11-23"

@@ -14,6 +14,10 @@
    suivent, de FB_PITCH octets chacune : 322 pixels (161 mots), pour
    qu'une ligne affichée avec le décalage d'écran (SFT, 321 pixels lus)
    ne déborde pas sur la suivante. 224 lignes : 72 640 octets sur 128 Ko.
+
+   Le décalage d'écran sert aux positions impaires de la caméra : le
+   moteur dessine toujours à partir d'une abscisse paire de la zone (des
+   mots entiers), et l'affichage commence un pixel plus loin.
    ========================================================================= */
 
 #define FB_WIDTH VDP_SCREEN_WIDTH
@@ -34,16 +38,5 @@ void fb_init_line_table(int screenHeight);
 static inline uint32_t fb_offset(int x, int y) {
     return (uint32_t)(FB_LINE_TABLE_BYTES + y * FB_PITCH + x);
 }
-
-/* Ce qu'un CPU dessine pendant une image : les lignes firstLine,
-   firstLine + lineStep, firstLine + 2 * lineStep...
-   Avec deux CPU : lineStep = 2, firstLine = 0 (Master) ou 1 (Slave).
-   Chaque CPU possède entièrement ses lignes : aucun
-   des deux n'a besoin d'attendre l'autre au milieu de l'image. */
-typedef struct {
-    int height;
-    int firstLine;
-    int lineStep;
-} Screen;
 
 #endif

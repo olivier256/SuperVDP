@@ -1,56 +1,62 @@
 /* =========================================================================
-   Programme 68000 (Mega Drive) de la démo.
+   Programme 68000 (Mega Drive) de la démo : le jeu.
 
-   À chaque VBlank, il lit la manette, fait avancer la vue et écrit les
-   défilements dans les registres COMM 4 à 7 : pour lui, la 32X est un
-   VDP. Les SH2 ne font que dessiner.
+   À chaque VBlank, il lit la manette, déplace la caisse dans la zone
+   (demo_move : sol, marches, eau, passages sous les arches et les ponts),
+   place la caméra, et écrit les deux positions dans les registres COMM 3
+   à 7 : pour lui, la 32X est une carte graphique. Les SH2 ne font que
+   dessiner. Sur la console, la Mega Drive afficherait aussi le HUD sur son
+   propre plan.
 
    Le 68000 n'est pas émulé : ce programme est en C, appelé par la
    plate-forme au début de chaque VBlank (voir pixel/game.h). Sur la
-   console, ce serait du code 68000 : lecture du port $A10003 (TH haut
-   puis TH bas), calculs, puis écritures en $A15120 + 2 x n.
+   console, ce serait du code 68000, qui lirait les voxels de la zone
+   directement dans la cartouche.
 
-   Parallaxe : les deux plans arrivent ensemble au bout.
-   - Plan A : xA de 0 à 768 - 320 = 448.
-   - Plan B : xB de 0 à 672 - 320 = 352.
-   xB = xA x 352 / 448 = xA x 11 / 14, arrondi : quand A avance de
-   14 pixels, B en avance de 11. La division (DIVU sur 68000) n'est faite
-   qu'une fois par image.
-
-   Commandes : Gauche / Droite déplacent la vue (le décor défile dans
-   l'autre sens) ; C maintenu : 4 pixels par image au lieu de 1.
+   Commandes, dans les axes de la zone (comme dans Landstalker, une
+   direction de la croix suit une diagonale de l'écran) :
+     Droite : u + 1 (vers le bas à droite)   Gauche : u - 1
+     Bas    : v + 1 (vers le bas à gauche)   Haut   : v - 1
+     C maintenu : 4 unités par image au lieu de 1.
    ========================================================================= */
 
+#include "demo.h"
 #include "game.h"
 #include "interface.h"
 #include "platform.h"
 #include "shared.h"
 
-#include "demo_assets.h"
-
-#define SCREEN_WIDTH 320
-#define SPEED_SLOW 1 /* pixels par image */
+#define SPEED_SLOW 1 /* unités du monde par image */
 #define SPEED_FAST 4
+#define SCREEN_HEIGHT 224
 
-static int scrollA = 0; /* position de la vue dans le plan A */
-
-static int clamp(int v, int min, int max) {
-    return v < min ? min : (v > max ? max : v);
-}
+static int started = 0;
+static int u, v, w;
 
 void md_vint(void) {
-    const int maxA = asset_plane_a.widthTiles * TILE_SIZE - SCREEN_WIDTH;
-    const int maxB = asset_plane_b.widthTiles * TILE_SIZE - SCREEN_WIDTH;
-
+    if (!started) {
+        u = DEMO_START_U;
+        v = DEMO_START_V;
+        w = demo_ground(u, v, 15 * 16);
+        started = 1;
+    }
     const unsigned pad = platform_read_pad();
     const int speed = (pad & PAD_C) ? SPEED_FAST : SPEED_SLOW;
-    const int dx = ((pad & PAD_RIGHT) ? 1 : 0) - ((pad & PAD_LEFT) ? 1 : 0);
-
-    scrollA = clamp(scrollA + dx * speed, 0, maxA);
-    const int scrollB = (scrollA * maxB + maxA / 2) / maxA;
-
-    comm[COMM_HSCROLL_A] = (uint16_t)scrollA;
-    comm[COMM_HSCROLL_B] = (uint16_t)scrollB;
-    comm[COMM_VSCROLL_A] = 0; /* les plans font la hauteur de l'écran */
-    comm[COMM_VSCROLL_B] = 0;
+    const int du = ((pad & PAD_RIGHT) ? 1 : 0) - ((pad & PAD_LEFT) ? 1 : 0);
+    const int dv = ((pad & PAD_DOWN) ? 1 : 0) - ((pad & PAD_UP) ? 1 : 0);
+    /* une unité à la fois : la caisse s'arrête au pied d'un obstacle,
+       même à 4 unités par image */
+    for (int s = 0; s < speed; s++) {
+        if (du)
+            demo_move(&u, &v, &w, du, 0);
+        if (dv)
+            demo_move(&u, &v, &w, 0, dv);
+    }
+    int cx, cy;
+    demo_camera(u, v, w, SCREEN_HEIGHT, &cx, &cy);
+    comm[COMM_CAMERA_X] = (uint16_t)cx;
+    comm[COMM_CAMERA_Y] = (uint16_t)cy;
+    comm[COMM_OBJECT_U] = (uint16_t)u;
+    comm[COMM_OBJECT_V] = (uint16_t)v;
+    comm[COMM_OBJECT_W] = (uint16_t)w;
 }

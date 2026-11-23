@@ -1,0 +1,12 @@
+# Types de cube de la zone de démo : pour chaque numéro de couleur de
+# MagicaVoxel (1 à 255), les trois faces, chacune prise dans une image de
+# cube 32 x 32 (demo/assets/NOM.bmp) : NOM.top, NOM.left ou NOM.right.
+# Une face peut venir d'un autre cube : c'est ainsi qu'on varie.
+#
+# type  dessus        gauche        droite
+1       grass.top     grass.left    grass.right
+2       dirt.top      dirt.left     dirt.right
+3       stone.top     stone.left    stone.right
+4       water.top     water.left    water.right
+5       planks.top    planks.left   planks.right
+6       crate.top     crate.left    crate.right
